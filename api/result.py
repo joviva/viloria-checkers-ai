@@ -1,5 +1,4 @@
-# Vercel Serverless Function for Game Results
-import json
+from flask import Flask, request, jsonify
 import sys
 import os
 
@@ -7,49 +6,26 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'docs'))
 
 from api.ai import record_game
 
-def handler(request):
-    """Vercel serverless function handler"""
+app = Flask(__name__)
+
+@app.route('/api/result', methods=['POST', 'OPTIONS'])
+def handler():
     headers = {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'POST, OPTIONS',
         'Access-Control-Allow-Headers': 'Content-Type',
-        'Content-Type': 'application/json',
     }
     
-    # Handle OPTIONS for CORS
     if request.method == 'OPTIONS':
-        return {
-            'statusCode': 200,
-            'headers': headers,
-            'body': ''
-        }
+        return ('', 200, headers)
     
-    # Handle POST request
-    if request.method == 'POST':
-        try:
-            # Parse request body
-            body = json.loads(request.body) if isinstance(request.body, str) else request.body
-            
-            result = record_game(
-                body.get('winner'),
-                body.get('move_count', 0),
-                body.get('trajectory', [])
-            )
-            
-            return {
-                'statusCode': 200,
-                'headers': headers,
-                'body': json.dumps(result)
-            }
-        except Exception as e:
-            return {
-                'statusCode': 500,
-                'headers': headers,
-                'body': json.dumps({'error': str(e)})
-            }
-    
-    return {
-        'statusCode': 405,
-        'headers': headers,
-        'body': json.dumps({'error': 'Method not allowed'})
-    }
+    try:
+        data = request.get_json()
+        result = record_game(
+            data.get('winner'),
+            data.get('move_count', 0),
+            data.get('trajectory', [])
+        )
+        return jsonify(result), 200, headers
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500, headers
