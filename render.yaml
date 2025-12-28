@@ -1,0 +1,32 @@
+services:
+  # API Server
+  - type: web
+    name: checkers-ai-api
+    env: python
+    plan: free
+    buildCommand: "pip install -r docs/requirements.txt"
+    startCommand: "cd docs && uvicorn api.main:app --host 0.0.0.0 --port $PORT"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: PYTHONUNBUFFERED
+        value: 1
+    healthCheckPath: /ai/stats
+
+  # Learning Worker (background service)
+  - type: worker
+    name: checkers-ai-worker
+    env: python
+    plan: free
+    buildCommand: "pip install -r docs/requirements.txt"
+    startCommand: "cd docs && python -m learning.worker"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: PYTHONUNBUFFERED
+        value: 1
+
+databases:
+  # Optional: Use managed database instead of SQLite for production
+  # - name: checkers-db
+  #   plan: free

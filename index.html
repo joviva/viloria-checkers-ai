@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Viloria Checkers vs AI</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div class="game-container">
+      <h1>Viloria Checkers vs AI</h1>
+
+      <div id="header-container">
+        <div class="message-area" id="game-message"></div>
+      </div>
+
+      <div class="game-layout">
+        <div class="info-panel">
+          <div class="panel-title">Game Status</div>
+          <div
+            class="buttons-section"
+            style="flex-direction: column; width: 100%; margin-bottom: 15px"
+          >
+            <button
+              class="control-btn"
+              onclick="resetGame()"
+              style="width: 100%"
+            >
+              New Game
+            </button>
+          </div>
+          <div class="turn-display" id="turn-indicator">Red's Turn</div>
+          <div class="score-item">
+            <span>Red Captured:</span>
+            <span id="red-score">0</span>
+          </div>
+          <div class="score-item">
+            <span>Black Captured:</span>
+            <span id="black-score">0</span>
+          </div>
+          <div class="score-item">
+            <span>Move Count:</span>
+            <span id="move-count">0</span>
+          </div>
+        </div>
+
+        <div class="board-container">
+          <div id="board"></div>
+        </div>
+
+        <div class="info-panel">
+          <div class="panel-title">AI Control</div>
+          <div
+            class="buttons-section"
+            style="flex-direction: column; width: 100%; margin-bottom: 15px"
+          >
+            <button
+              class="control-btn"
+              onclick="showAIStats()"
+              style="width: 100%"
+            >
+              AI Statistics
+            </button>
+          </div>
+          <div class="ai-status" id="ai-status">Grandmaster Level</div>
+
+          <div class="stats-grid">
+            <div class="stat-item">
+              <div>Win Rate</div>
+              <div id="win-rate">0%</div>
+            </div>
+            <div class="stat-item">
+              <div>Games</div>
+              <div id="games-played">0</div>
+            </div>
+            <div class="stat-item">
+              <div>Avg Time</div>
+              <div id="avg-time">0s</div>
+            </div>
+            <div class="stat-item">
+              <div>Known Positions</div>
+              <div id="known-positions">0</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script src="script.js" defer></script>
+  </body>
+</html>
