@@ -8,8 +8,9 @@ from api.ai import get_stats
 
 app = Flask(__name__)
 
+@app.route('/', methods=['GET', 'OPTIONS'])
 @app.route('/api/stats', methods=['GET', 'OPTIONS'])
-def handler():
+def index():
     headers = {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, OPTIONS',

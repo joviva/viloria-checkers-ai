@@ -9,8 +9,9 @@ from api.ai import infer_move
 
 app = Flask(__name__)
 
+@app.route('/', methods=['POST', 'OPTIONS'])
 @app.route('/api/move', methods=['POST', 'OPTIONS'])
-def handler():
+def index():
     # CORS headers
     headers = {
         'Access-Control-Allow-Origin': '*',

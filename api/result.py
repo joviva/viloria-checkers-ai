@@ -8,8 +8,9 @@ from api.ai import record_game
 
 app = Flask(__name__)
 
+@app.route('/', methods=['POST', 'OPTIONS'])
 @app.route('/api/result', methods=['POST', 'OPTIONS'])
-def handler():
+def index():
     headers = {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'POST, OPTIONS',
