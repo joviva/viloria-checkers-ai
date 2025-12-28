@@ -5,7 +5,12 @@
 // baseUrl: "https://YOUR-APP.vercel.app/api"
 const API_CONFIG = {
   enabled: true,
-  baseUrl: "http://localhost:8000", // Change to Vercel URL for deployment
+  // Use localhost for local development, empty string for Vercel deployment (relative path)
+  baseUrl:
+    window.location.hostname === "localhost" ||
+    window.location.protocol === "file:"
+      ? "http://localhost:8000"
+      : "",
   timeout: 5000,
 };
 
@@ -7147,7 +7152,7 @@ async function getAIMoveFromAPI() {
       return null;
     }
 
-    const response = await fetch(`${API_CONFIG.baseUrl}/ai/move`, {
+    const response = await fetch(`${API_CONFIG.baseUrl}/api/move`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -7211,7 +7216,7 @@ async function sendGameResultToAPI(winner) {
   try {
     const duration = (Date.now() - gameStartTime) / 1000;
 
-    const response = await fetch(`${API_CONFIG.baseUrl}/ai/result`, {
+    const response = await fetch(`${API_CONFIG.baseUrl}/api/result`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -7241,7 +7246,7 @@ async function resumeLearning() {
   if (!API_CONFIG.enabled) return;
 
   try {
-    const response = await fetch(`${API_CONFIG.baseUrl}/ai/resume`, {
+    const response = await fetch(`${API_CONFIG.baseUrl}/api/resume`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -8279,7 +8284,7 @@ async function resetGame() {
   // Try to auto-resume learning if API is enabled
   if (API_CONFIG.enabled) {
     try {
-      const response = await fetch(`${API_CONFIG.baseUrl}/ai/stats`, {
+      const response = await fetch(`${API_CONFIG.baseUrl}/api/stats`, {
         method: "GET",
         signal: AbortSignal.timeout(2000), // 2 second timeout
       });
@@ -8319,7 +8324,7 @@ async function showAIStats() {
   let apiStats = "";
   if (API_CONFIG.enabled) {
     try {
-      const response = await fetch(`${API_CONFIG.baseUrl}/ai/stats`);
+      const response = await fetch(`${API_CONFIG.baseUrl}/api/stats`);
       if (response.ok) {
         const data = await response.json();
         apiStats = `

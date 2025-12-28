@@ -47,13 +47,13 @@ async def root():
         "version": config.MODEL_VERSION,
         "endpoints": {
             "GET /health": "System health check",
-            "POST /ai/move": "Get AI move for current position",
-            "POST /ai/result": "Record game result for learning",
-            "GET /ai/stats": "Get training statistics"
+            "POST /api/move": "Get AI move for current position",
+            "POST /api/result": "Record game result for learning",
+            "GET /api/stats": "Get training statistics"
         }
     }
 
-@app.post("/ai/move", response_model=MoveResponse)
+@app.post("/api/move", response_model=MoveResponse)
 async def ai_move(req: MoveRequest):
     """
     Get the best move from the AI for the current board position.
@@ -69,7 +69,7 @@ async def ai_move(req: MoveRequest):
         logger.error(f"Error processing AI move: {e}")
         raise HTTPException(status_code=500, detail=f"AI move failed: {str(e)}")
 
-@app.post("/ai/result")
+@app.post("/api/result")
 async def ai_result(req: ResultRequest, bg: BackgroundTasks):
     """
     Record a finished game for learning.
@@ -83,7 +83,7 @@ async def ai_result(req: ResultRequest, bg: BackgroundTasks):
         logger.error(f"Error recording game: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to record game: {str(e)}")
 
-@app.get("/ai/stats", response_model=StatsResponse)
+@app.get("/api/stats", response_model=StatsResponse)
 async def ai_stats():
     """
     Get statistics about the replay buffer and training progress.
@@ -108,7 +108,7 @@ async def ai_stats():
         logger.error(f"Error fetching stats: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to fetch stats: {str(e)}")
 
-@app.post("/ai/resume")
+@app.post("/api/resume")
 async def resume_learning():
     """
     Resume the learning worker if it's paused.
