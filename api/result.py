@@ -1,43 +1,55 @@
-from http.server import BaseHTTPRequestHandler
+# Vercel Serverless Function for Game Results
 import json
 import sys
 import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'docs'))
 
-try:
-    from docs.api.ai import record_game
-except ImportError:
-    pass
+from api.ai import record_game
 
-class handler(BaseHTTPRequestHandler):
-    def do_OPTIONS(self):
-        self.send_response(200)
-        self.send_header('Access-Control-Allow-Origin', '*')
-        self.send_header('Access-Control-Allow-Methods', 'POST, OPTIONS')
-        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
-        self.end_headers()
+def handler(request):
+    """Vercel serverless function handler"""
+    headers = {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type',
+        'Content-Type': 'application/json',
+    }
     
-    def do_POST(self):
+    # Handle OPTIONS for CORS
+    if request.method == 'OPTIONS':
+        return {
+            'statusCode': 200,
+            'headers': headers,
+            'body': ''
+        }
+    
+    # Handle POST request
+    if request.method == 'POST':
         try:
-            content_length = int(self.headers['Content-Length'])
-            post_data = self.rfile.read(content_length)
-            data = json.loads(post_data.decode('utf-8'))
+            # Parse request body
+            body = json.loads(request.body) if isinstance(request.body, str) else request.body
             
             result = record_game(
-                data.get('winner'),
-                data.get('move_count', 0),
-                data.get('trajectory', [])
+                body.get('winner'),
+                body.get('move_count', 0),
+                body.get('trajectory', [])
             )
             
-            self.send_response(200)
-            self.send_header('Content-Type', 'application/json')
-            self.send_header('Access-Control-Allow-Origin', '*')
-            self.end_headers()
-            self.wfile.write(json.dumps(result).encode())
-            
+            return {
+                'statusCode': 200,
+                'headers': headers,
+                'body': json.dumps(result)
+            }
         except Exception as e:
-            self.send_response(500)
-            self.send_header('Content-Type', 'application/json')
-            self.end_headers()
-            self.wfile.write(json.dumps({'error': str(e)}).encode())
+            return {
+                'statusCode': 500,
+                'headers': headers,
+                'body': json.dumps({'error': str(e)})
+            }
+    
+    return {
+        'statusCode': 405,
+        'headers': headers,
+        'body': json.dumps({'error': 'Method not allowed'})
+    }

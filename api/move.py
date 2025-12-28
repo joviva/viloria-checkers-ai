@@ -1,7 +1,4 @@
-# Vercel Serverless Functions for Checkers AI
-# These replace the FastAPI endpoints
-
-from http.server import BaseHTTPRequestHandler
+# Vercel Serverless Function for AI Move
 import json
 import sys
 import os
@@ -9,64 +6,58 @@ import os
 # Add docs to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'docs'))
 
-try:
-    from docs.api.ai import infer_move, record_game, get_stats
-except ImportError:
-    # Fallback for local development
-    pass
+from api.ai import infer_move
 
-def create_response(status_code, data):
-    """Helper to create JSON response"""
-    return {
-        'statusCode': status_code,
-        'headers': {
-            'Content-Type': 'application/json',
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type',
-        },
-        'body': json.dumps(data)
-    }
-
-class handler(BaseHTTPRequestHandler):
+def handler(request):
     """Vercel serverless function handler"""
+    # CORS headers
+    headers = {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type',
+        'Content-Type': 'application/json',
+    }
     
-    def do_OPTIONS(self):
-        """Handle CORS preflight"""
-        self.send_response(200)
-        self.send_header('Access-Control-Allow-Origin', '*')
-        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
-        self.end_headers()
+    # Handle OPTIONS for CORS
+    if request.method == 'OPTIONS':
+        return {
+            'statusCode': 200,
+            'headers': headers,
+            'body': ''
+        }
     
-    def do_POST(self):
-        """Handle POST requests for AI move"""
+    # Handle POST request
+    if request.method == 'POST':
         try:
-            # Read request body
-            content_length = int(self.headers['Content-Length'])
-            post_data = self.rfile.read(content_length)
-            data = json.loads(post_data.decode('utf-8'))
+            # Parse request body
+            body = json.loads(request.body) if isinstance(request.body, str) else request.body
+            board_state = body.get('board_state')
             
-            # Call AI inference
-            board = data.get('board')
-            if not board:
-                self.send_response(400)
-                self.send_header('Content-Type', 'application/json')
-                self.end_headers()
-                self.wfile.write(json.dumps({'error': 'Board state required'}).encode())
-                return
+            if not board_state:
+                return {
+                    'statusCode': 400,
+                    'headers': headers,
+                    'body': json.dumps({'error': 'board_state is required'})
+                }
             
             # Get AI move
-            result = infer_move(board)
+            result = infer_move(board_state)
             
-            self.send_response(200)
-            self.send_header('Content-Type', 'application/json')
-            self.send_header('Access-Control-Allow-Origin', '*')
-            self.end_headers()
-            self.wfile.write(json.dumps(result).encode())
+            return {
+                'statusCode': 200,
+                'headers': headers,
+                'body': json.dumps(result)
+            }
             
         except Exception as e:
-            self.send_response(500)
-            self.send_header('Content-Type', 'application/json')
-            self.end_headers()
-            self.wfile.write(json.dumps({'error': str(e)}).encode())
+            return {
+                'statusCode': 500,
+                'headers': headers,
+                'body': json.dumps({'error': str(e)})
+            }
+    
+    return {
+        'statusCode': 405,
+        'headers': headers,
+        'body': json.dumps({'error': 'Method not allowed'})
+    }

@@ -1,4 +1,4 @@
-from http.server import BaseHTTPRequestHandler
+# Vercel Serverless Function for Stats
 import json
 import sys
 import os
@@ -6,31 +6,43 @@ import os
 # Add docs to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'docs'))
 
-try:
-    from docs.api.ai import get_stats
-except ImportError:
-    pass
+from api.ai import get_stats
 
-class handler(BaseHTTPRequestHandler):
-    def do_OPTIONS(self):
-        self.send_response(200)
-        self.send_header('Access-Control-Allow-Origin', '*')
-        self.send_header('Access-Control-Allow-Methods', 'GET, OPTIONS')
-        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
-        self.end_headers()
+def handler(request):
+    """Vercel serverless function handler"""
+    headers = {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type',
+        'Content-Type': 'application/json',
+    }
     
-    def do_GET(self):
+    # Handle OPTIONS for CORS
+    if request.method == 'OPTIONS':
+        return {
+            'statusCode': 200,
+            'headers': headers,
+            'body': ''
+        }
+    
+    # Handle GET request
+    if request.method == 'GET':
         try:
             stats = get_stats()
-            
-            self.send_response(200)
-            self.send_header('Content-Type', 'application/json')
-            self.send_header('Access-Control-Allow-Origin', '*')
-            self.end_headers()
-            self.wfile.write(json.dumps(stats).encode())
-            
+            return {
+                'statusCode': 200,
+                'headers': headers,
+                'body': json.dumps(stats)
+            }
         except Exception as e:
-            self.send_response(500)
-            self.send_header('Content-Type', 'application/json')
-            self.end_headers()
-            self.wfile.write(json.dumps({'error': str(e)}).encode())
+            return {
+                'statusCode': 500,
+                'headers': headers,
+                'body': json.dumps({'error': str(e)})
+            }
+    
+    return {
+        'statusCode': 405,
+        'headers': headers,
+        'body': json.dumps({'error': 'Method not allowed'})
+    }
