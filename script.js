@@ -7514,7 +7514,8 @@ function movePiece(move) {
   if (isCapture) {
     // Always check for continuation captures, even for kings
     // This ensures all mandatory captures are completed
-    const furtherCaptures = findPossibleCaptures(toRow, toCol, piece);
+    const alreadyCaptured = move.capturedPieces || [];
+    const furtherCaptures = findPossibleCaptures(toRow, toCol, piece, alreadyCaptured);
     if (furtherCaptures.length > 0) {
       mustContinueCapture = true;
       forcedCapturePiece = piece;
@@ -7680,7 +7681,8 @@ function findMandatoryCaptures(playerColor) {
   if (mustContinueCapture && forcedCapturePiece) {
     const r = parseInt(forcedCapturePiece.dataset.row);
     const c = parseInt(forcedCapturePiece.dataset.col);
-    return findPossibleCaptures(r, c, forcedCapturePiece);
+    // Pass empty array for continuation - pieces already removed from DOM
+    return findPossibleCaptures(r, c, forcedCapturePiece, []);
   }
 
   const captureMoves = [];
@@ -7690,7 +7692,7 @@ function findMandatoryCaptures(playerColor) {
     if (p && p.dataset.color === playerColor) {
       const r = Math.floor(i / BOARD_SIZE);
       const c = i % BOARD_SIZE;
-      const pieceCaptures = findPossibleCaptures(r, c, p);
+      const pieceCaptures = findPossibleCaptures(r, c, p, []);
       if (pieceCaptures.length > 0) {
         captureMoves.push(...pieceCaptures);
       }
@@ -7851,7 +7853,7 @@ function findContinuationCaptures(board, row, col, piece) {
   return captures;
 }
 
-function findPossibleCaptures(row, col, piece) {
+function findPossibleCaptures(row, col, piece, alreadyCaptured = []) {
   const moves = [];
   const isKing = piece.dataset.king === "true";
   const opponentColor = piece.dataset.color === "red" ? "black" : "red";
@@ -7863,8 +7865,8 @@ function findPossibleCaptures(row, col, piece) {
   ];
 
   if (isKing) {
-    // King multi-capture logic
-    return enhancedAI.getKingCaptureSequences(row, col, piece, []);
+    // King multi-capture logic - pass already captured pieces
+    return enhancedAI.getKingCaptureSequences(row, col, piece, alreadyCaptured);
   } else {
     // Regular piece multi-capture chain generation
     // Recursively build all possible capture chains
