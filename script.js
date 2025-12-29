@@ -7497,10 +7497,35 @@ function movePiece(move) {
       (toRow === 0 && piece.dataset.color === "red");
 
     if (reachedPromotionRow) {
+      // PRIORITY FIX: Check if there are more captures available before promoting
+      // If piece can still capture, it must continue capturing before promotion
+      if (isCapture) {
+        const alreadyCaptured = move.capturedPieces || [];
+        const furtherCaptures = findPossibleCaptures(
+          toRow,
+          toCol,
+          piece,
+          alreadyCaptured
+        );
+        if (furtherCaptures.length > 0) {
+          // Must continue capturing - delay promotion
+          mustContinueCapture = true;
+          forcedCapturePiece = piece;
+          selectedPiece = piece;
+          selectedPieceRow = toRow;
+          selectedPieceCol = toCol;
+          piece.classList.add("selected");
+          highlightValidMoves(toRow, toCol);
+          recordTrajectoryIfNeeded();
+          return; // Don't promote yet - continue capturing
+        }
+      }
+      
+      // No more captures available - promote to king
       piece.dataset.king = "true";
       piece.classList.add("king");
 
-      // Promotion always ends the turn - no continuation captures
+      // Promotion ends the turn
       mustContinueCapture = false;
       forcedCapturePiece = null;
       recordTrajectoryIfNeeded();
@@ -7515,7 +7540,12 @@ function movePiece(move) {
     // Always check for continuation captures, even for kings
     // This ensures all mandatory captures are completed
     const alreadyCaptured = move.capturedPieces || [];
-    const furtherCaptures = findPossibleCaptures(toRow, toCol, piece, alreadyCaptured);
+    const furtherCaptures = findPossibleCaptures(
+      toRow,
+      toCol,
+      piece,
+      alreadyCaptured
+    );
     if (furtherCaptures.length > 0) {
       mustContinueCapture = true;
       forcedCapturePiece = piece;
@@ -7869,21 +7899,24 @@ function findPossibleCaptures(row, col, piece, alreadyCaptured = []) {
     return enhancedAI.getKingCaptureSequences(row, col, piece, alreadyCaptured);
   } else {
     // Regular piece multi-capture chain generation
-    // Recursively build all possible capture chains
-    function buildCaptureChains(board, r, c, p, chain, capturedSquares) {
-      let foundChain = false;
-      const opponentColor = p.dataset.color === "red" ? "black" : "red";
+    // Build capture sequences step-by-step to support continuation
+    function buildCaptureChains(r, c, capturedSoFar) {
+      const opponentColor = piece.dataset.color === "red" ? "black" : "red";
       const directions = [
         [-1, -1],
         [-1, 1],
         [1, -1],
         [1, 1],
       ];
+      
+      const availableCaptures = [];
+      
       for (const [dRow, dCol] of directions) {
         const middleRow = r + dRow;
         const middleCol = c + dCol;
         const jumpRow = r + dRow * 2;
         const jumpCol = c + dCol * 2;
+        
         if (
           jumpRow >= 0 &&
           jumpRow < BOARD_SIZE &&
@@ -7892,72 +7925,51 @@ function findPossibleCaptures(row, col, piece, alreadyCaptured = []) {
         ) {
           const middlePiece = getPieceAt(middleRow, middleCol);
           const landSquare = getPieceAt(jumpRow, jumpCol);
-          const alreadyCaptured = capturedSquares.has(
-            `${middleRow},${middleCol}`
-          );
+          const middleKey = `${middleRow},${middleCol}`;
+          const alreadyCaptured = capturedSoFar.includes(middleKey);
+          
           if (
             middlePiece &&
             middlePiece.dataset.color === opponentColor &&
             !landSquare &&
             !alreadyCaptured
           ) {
-            // Simulate the capture
-            capturedSquares.add(`${middleRow},${middleCol}`);
-            chain.push({
-              fromRow: r,
-              fromCol: c,
+            const newCapturedList = [...capturedSoFar, middleKey];
+            
+            // Create the move for THIS capture
+            const captureMove = {
+              fromRow: row,
+              fromCol: col,
               toRow: jumpRow,
               toCol: jumpCol,
-              piece: p,
+              piece: piece,
               isCapture: true,
-              capturedPiece: middlePiece,
               capturedRow: middleRow,
               capturedCol: middleCol,
+              capturedPieces: newCapturedList,
               isKingCapture: middlePiece.dataset.king === "true",
-            });
-            // Continue chain from new position
-            buildCaptureChains(
-              board,
-              jumpRow,
-              jumpCol,
-              p,
-              chain,
-              capturedSquares
-            );
-            foundChain = true;
-            // After recursion, remove last move and captured square for other branches
-            chain.pop();
-            capturedSquares.delete(`${middleRow},${middleCol}`);
+            };
+            
+            // Check if more captures are possible from the landing position
+            const furtherCaptures = buildCaptureChains(jumpRow, jumpCol, newCapturedList);
+            
+            if (furtherCaptures.length > 0) {
+              // There are continuation captures - add all of them
+              availableCaptures.push(...furtherCaptures);
+            } else {
+              // No more captures - this is a terminal move
+              availableCaptures.push(captureMove);
+            }
           }
         }
       }
-      // If no further captures, and chain is not empty, push the chain as a move
-      if (!foundChain && chain.length > 0) {
-        // Build a single move representing the full chain
-        const first = chain[0];
-        const last = chain[chain.length - 1];
-        moves.push({
-          fromRow: first.fromRow,
-          fromCol: first.fromCol,
-          toRow: last.toRow,
-          toCol: last.toCol,
-          piece: p,
-          isCapture: true,
-          captureChain: chain.map((m) => ({
-            fromRow: m.fromRow,
-            fromCol: m.fromCol,
-            toRow: m.toRow,
-            toCol: m.toCol,
-            capturedRow: m.capturedRow,
-            capturedCol: m.capturedCol,
-            isKingCapture: m.isKingCapture,
-          })),
-          capturedPieces: chain.map((m) => `${m.capturedRow},${m.capturedCol}`),
-        });
-      }
+      
+      return availableCaptures;
     }
-    // Start building chains from this piece
-    buildCaptureChains(null, row, col, piece, [], new Set());
+    
+    // Start building chains from this piece with already captured pieces
+    const allCaptures = buildCaptureChains(row, col, alreadyCaptured);
+    moves.push(...allCaptures);
   }
   return moves;
 }
