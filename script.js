@@ -8387,8 +8387,14 @@ function addToTrajectory(beforeState, move, afterState, playerColor) {
   if (!API_CONFIG.enabled) return;
   if (!beforeState || !afterState) return;
 
-  // [CRITICAL] CRITICAL: Frontend only tracks states and actions
-  // Backend calculates ALL rewards to prevent manipulation
+  // Calculate heuristic evaluation for distillation (teacher signal)
+  // Normalized to approx [-1, 1] using tanh
+  let hScore = 0;
+  if (typeof enhancedAI !== "undefined" && enhancedAI.evaluatePositionEnhanced) {
+    const rawScore = enhancedAI.evaluatePositionEnhanced(afterState, "black");
+    hScore = Math.tanh(rawScore / 2000000); // Scale 2.0M to ~0.76
+  }
+
   gameTrajectory.push({
     board_state: beforeState,
     action: {
@@ -8398,6 +8404,7 @@ function addToTrajectory(beforeState, move, afterState, playerColor) {
     next_state: afterState,
     player: playerColor || "unknown",
     reward: 0,
+    heuristic_score: hScore,
   });
 }
 

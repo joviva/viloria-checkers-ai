@@ -280,6 +280,7 @@ class A2CLearner:
         rewards = []
         next_states = []
         dones = []
+        heuristic_scores = []
         
         for traj in trajectories:
             states.append(encode_state(traj['board_state']))
@@ -295,6 +296,7 @@ class A2CLearner:
             rewards.append(traj['reward'])
             next_states.append(encode_state(traj['next_state']))
             dones.append(traj['done'])
+            heuristic_scores.append(traj.get('heuristic_score', 0.0))
         
         # Convert to tensors
         states_tensor = torch.tensor(np.array(states), dtype=torch.float32)
@@ -302,6 +304,7 @@ class A2CLearner:
         rewards_tensor = torch.tensor(rewards, dtype=torch.float32)
         next_states_tensor = torch.tensor(np.array(next_states), dtype=torch.float32)
         dones_tensor = torch.tensor(dones, dtype=torch.bool)
+        h_scores_tensor = torch.tensor(heuristic_scores, dtype=torch.float32)
         
         # Forward pass (with auxiliary outputs if advanced network)
         self.model_training.train()
@@ -360,13 +363,18 @@ class A2CLearner:
             except Exception as e:
                 print(f"Warning: Threat loss computation failed: {e}")
         
+        # === DISTILLATION LOSS ===
+        # Force the network to learn from the heuristic AI evaluation (Teacher-Student)
+        distillation_loss = nn.MSELoss()(values.squeeze(), h_scores_tensor.to(values.device))
+        
         # === TOTAL LOSS ===
         total_loss = (
             policy_loss + 
             self.value_loss_coef * value_loss - 
             self.entropy_coef * entropy +
-            0.1 * material_loss +  # Auxiliary losses weighted lower
-            0.1 * threat_loss
+            0.1 * material_loss +
+            0.1 * threat_loss +
+            0.5 * distillation_loss  # Knowledge Distillation bias
         )
         
         # Backward pass
@@ -418,6 +426,7 @@ class A2CLearner:
         if self.use_advanced_network:
             stats['material_loss'] = material_loss.item()
             stats['threat_loss'] = threat_loss.item()
+            stats['distill_loss'] = distillation_loss.item()
         
         if self.curriculum:
             stage_info = self.curriculum.get_stage_info()

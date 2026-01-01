@@ -588,6 +588,8 @@ def record_game(req):
                     )
                     
                     step_player = getattr(step, 'player', None) or "black"
+                    heuristic_score = getattr(step, 'heuristic_score', 0.0)
+                    heuristic_move = getattr(step, 'heuristic_move', None)
 
                     replay_buffer.add_trajectory(
                         game_id=req.game_id,
@@ -597,7 +599,9 @@ def record_game(req):
                         reward=reward,  # Backend-calculated reward
                         next_state=step.next_state,
                         done=is_terminal,
-                        player=step_player
+                        player=step_player,
+                        heuristic_score=heuristic_score,
+                        heuristic_move=heuristic_move
                     )
                 except Exception as step_error:
                     print(f"WARNING: Error processing step {i}: {step_error}")

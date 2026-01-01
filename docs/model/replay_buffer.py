@@ -51,6 +51,8 @@ class ReplayBuffer:
                     done INTEGER,
                     player TEXT,
                     priority REAL DEFAULT 1.0,
+                    heuristic_score REAL DEFAULT 0.0,
+                    heuristic_move TEXT,
                     FOREIGN KEY (game_id) REFERENCES games(game_id)
                 )
             """)
@@ -93,27 +95,28 @@ class ReplayBuffer:
     
     def add_trajectory(self, game_id: str, move_number: int, board_state: Dict,
                       action: Dict, reward: float, next_state: Dict,
-                      done: bool, player: str, priority: float = 1.0):
+                      done: bool, player: str, priority: float = 1.0,
+                      heuristic_score: float = 0.0, heuristic_move: Dict = None):
         """
         Add a single state-action-reward transition.
         
         Args:
-            priority: Importance weight for sampling (higher = more important)
-                      Default 1.0. Use higher values for:
-                      - Multi-captures (2.0-5.0)
-                      - Game-winning moves (3.0)
-                      - Critical defensive saves (2.0)
+            priority: Importance weight for sampling
+            heuristic_score: Value prediction from heuristic AI
+            heuristic_move: Best move suggested by heuristic AI
         """
         with self.lock:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
                     INSERT INTO trajectories 
-                    (game_id, move_number, board_state, action, reward, next_state, done, player, priority)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (game_id, move_number, board_state, action, reward, next_state, 
+                     done, player, priority, heuristic_score, heuristic_move)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (game_id, move_number, json.dumps(board_state), 
                       json.dumps(action), reward, json.dumps(next_state), 
-                      int(done), player, priority))
+                      int(done), player, priority, heuristic_score, 
+                      json.dumps(heuristic_move) if heuristic_move else None))
                 conn.commit()
     
     def add_batch_trajectories(self, game_id: str, trajectories: List[Dict]):
@@ -245,6 +248,7 @@ class ReplayBuffer:
             # Get all trajectories with their priorities
             cursor.execute("""
                 SELECT t.board_state, t.action, t.reward, t.next_state, t.done, t.priority,
+                       t.heuristic_score, t.heuristic_move,
                        ROW_NUMBER() OVER (ORDER BY RANDOM()) as rn
                 FROM trajectories t
                 WHERE t.player = ?
@@ -283,7 +287,9 @@ class ReplayBuffer:
                     'action': json.loads(row[1]),
                     'reward': row[2],
                     'next_state': json.loads(row[3]),
-                    'done': bool(row[4])
+                    'done': bool(row[4]),
+                    'heuristic_score': row[6],
+                    'heuristic_move': json.loads(row[7]) if row[7] else None
                 })
             
             return results

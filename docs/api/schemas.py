@@ -17,6 +17,8 @@ class TrajectoryStep(BaseModel):
     reward: float = 0.0
     next_state: List[List[Optional[Dict[str, Any]]]]
     player: Optional[str] = None  # "black" (AI) or "red" (human)
+    heuristic_score: Optional[float] = 0.0  # Normalized evaluation from heuristic AI
+    heuristic_move: Optional[Dict[str, Any]] = None  # Best move suggested by heuristic AI
 
 
 class ResultRequest(BaseModel):
