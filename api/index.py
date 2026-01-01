@@ -1,9 +1,28 @@
-import sys
 import os
+import sys
+import types
 
-# Add the docs directory to the path so we can import the app
-# Current file is in /api/index.py
-# Docs is in /docs
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'docs'))
+# Vercel/Serverless entrypoint.
+#
+# This repository has two different folders named "api":
+# - /api        (this serverless function folder)
+# - /docs/api   (the FastAPI application package)
+#
+# When Python imports "api.index", it creates/uses the top-level "api" package
+# from /api first, which prevents "from api.main import app" from resolving to
+# /docs/api/main.py.
+#
+# Fix: add /docs to sys.path and temporarily bind the "api" package to /docs/api.
 
-from api.main import app
+_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+_DOCS_DIR = os.path.join(_REPO_ROOT, "docs")
+_DOCS_API_DIR = os.path.join(_DOCS_DIR, "api")
+
+if _DOCS_DIR not in sys.path:
+	sys.path.insert(0, _DOCS_DIR)
+
+docs_api_pkg = types.ModuleType("api")
+docs_api_pkg.__path__ = [_DOCS_API_DIR]
+sys.modules["api"] = docs_api_pkg
+
+from api.main import app  # noqa: E402

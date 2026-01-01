@@ -1,6 +1,15 @@
 import numpy as np
 import json
 
+
+def _get_playable_squares(board_size: int = 10):
+    playable_squares = []
+    for row in range(board_size):
+        for col in range(board_size):
+            if (row + col) % 2 == 1:
+                playable_squares.append((row, col))
+    return playable_squares
+
 def encode_state(board_state: str):
     """
     Encode the 10x10 checkers board state into a tensor format for the neural network.
@@ -57,85 +66,45 @@ def decode_move(move_index: int, board_size: int = 10):
     Decode a move index into from/to coordinates.
     
     For a 10x10 board, we have 50 playable squares.
-    Each square can make moves to up to 4 directions (8 for kings).
-    This gives us approximately 200-400 possible moves.
-    
-    We'll use a simplified encoding: move_index encodes both the from_square and direction.
+
+    Updated encoding (v2): action index encodes (from_playable_square, to_playable_square).
+    This supports flying kings because different landing squares map to different indices.
     """
-    # Get playable squares (dark squares only)
-    playable_squares = []
-    for row in range(board_size):
-        for col in range(board_size):
-            if (row + col) % 2 == 1:
-                playable_squares.append((row, col))
-    
-    # Each square has up to 8 possible moves (4 directions * variable distance for kings)
-    # Simplified: just encode as from_square * 8 + direction
-    from_square_idx = move_index // 8
-    direction_idx = move_index % 8
-    
-    if from_square_idx >= len(playable_squares):
+    playable_squares = _get_playable_squares(board_size)
+    squares_count = len(playable_squares)
+    if squares_count == 0:
         return None
-    
+
+    from_square_idx = move_index // squares_count
+    to_square_idx = move_index % squares_count
+
+    if from_square_idx < 0 or from_square_idx >= squares_count:
+        return None
+    if to_square_idx < 0 or to_square_idx >= squares_count:
+        return None
+
     from_row, from_col = playable_squares[from_square_idx]
-    
-    # Direction mapping (forward-left, forward-right, back-left, back-right for both colors)
-    directions = [
-        (-1, -1), (-1, 1), (1, -1), (1, 1),  # Single moves
-        (-2, -2), (-2, 2), (2, -2), (2, 2)   # Capture moves
-    ]
-    
-    if direction_idx >= len(directions):
-        return None
-    
-    dr, dc = directions[direction_idx]
-    to_row, to_col = from_row + dr, from_col + dc
-    
-    if 0 <= to_row < board_size and 0 <= to_col < board_size:
-        return {
-            'from': (from_row, from_col),
-            'to': (to_row, to_col)
-        }
-    
-    return None
+    to_row, to_col = playable_squares[to_square_idx]
+
+    return {
+        'from': (from_row, from_col),
+        'to': (to_row, to_col)
+    }
 
 
 def encode_move(from_row: int, from_col: int, to_row: int, to_col: int, board_size: int = 10):
     """
     Encode a move into a single index for the policy network output.
     """
-    # Get playable squares
-    playable_squares = []
-    for row in range(board_size):
-        for col in range(board_size):
-            if (row + col) % 2 == 1:
-                playable_squares.append((row, col))
-    
-    # Find from_square index
+    playable_squares = _get_playable_squares(board_size)
+    squares_count = len(playable_squares)
+    if squares_count == 0:
+        return -1
+
     try:
         from_square_idx = playable_squares.index((from_row, from_col))
+        to_square_idx = playable_squares.index((to_row, to_col))
     except ValueError:
         return -1
-    
-    # Calculate direction
-    dr = to_row - from_row
-    dc = to_col - from_col
-    
-    # Map direction to index
-    directions = [
-        (-1, -1), (-1, 1), (1, -1), (1, 1),
-        (-2, -2), (-2, 2), (2, -2), (2, 2)
-    ]
-    
-    try:
-        direction_idx = directions.index((dr, dc))
-    except ValueError:
-        # For longer king moves, normalize to single step
-        normalized_dr = dr // abs(dr) if dr != 0 else 0
-        normalized_dc = dc // abs(dc) if dc != 0 else 0
-        try:
-            direction_idx = directions.index((normalized_dr, normalized_dc))
-        except ValueError:
-            return -1
-    
-    return from_square_idx * 8 + direction_idx
+
+    return from_square_idx * squares_count + to_square_idx

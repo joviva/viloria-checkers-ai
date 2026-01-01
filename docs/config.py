@@ -53,7 +53,9 @@ LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 # Neural Network Architecture
 BOARD_SIZE = 10
 NUM_CHANNELS = 5  # red, red_king, black, black_king, valid_squares
-NUM_ACTIONS = 400  # 50 squares * 8 directions
+# Action space (v2): 50 playable squares x 50 playable squares = 2500.
+# This supports flying kings because each landing square is uniquely representable.
+NUM_ACTIONS = 2500
 CONV_CHANNELS = [64, 128, 128]
 RESIDUAL_BLOCKS = 2
 

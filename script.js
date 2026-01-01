@@ -14,6 +14,218 @@ const API_CONFIG = {
   timeout: 5000,
 };
 
+// Service Controller Configuration
+const SERVICE_CONTROLLER_URL = "http://localhost:9000";
+let keepAliveInterval = null;
+let servicesStarted = false;
+let servicesOffline = false; // Track if we're in offline mode
+let lastServiceCheckTime = 0;
+const SERVICE_CHECK_COOLDOWN = 30000; // Don't check too frequently (30 seconds)
+
+async function startServices() {
+  // Start FastAPI server and learning worker via auto-launcher
+  try {
+    const response = await fetch(`${SERVICE_CONTROLLER_URL}/start`, {
+      method: "GET",
+      mode: "cors",
+      timeout: 4000
+    }).catch(e => {
+      servicesOffline = true;
+      console.log("Auto-launcher not responding - using offline mode");
+      return null;
+    });
+    
+    if (!response) {
+      servicesOffline = true;
+      return false;
+    }
+    
+    const result = await response.json();
+    
+    // Check if services are actually running
+    if (result.both_running) {
+      // Both API and worker are running
+      servicesStarted = true;
+      servicesOffline = false;
+      console.log("✓ Services verified running");
+      startKeepAlive();
+      return true;
+    } else if (result.api_running) {
+      // At least API is running
+      servicesStarted = true;
+      servicesOffline = false;
+      console.log("✓ API server running");
+      startKeepAlive();
+      return true;
+    } else {
+      // Services not responding
+      servicesOffline = true;
+      console.log("Services not responding - using offline mode");
+      return false;
+    }
+  } catch (error) {
+    servicesOffline = true;
+    console.log("Services unavailable - using offline mode", error.message);
+    return false;
+  }
+}
+
+function startKeepAlive() {
+  // Keep services active while game is running by periodically checking status
+  if (keepAliveInterval) return;
+  
+  keepAliveInterval = setInterval(async () => {
+    // Only check if enough time has passed and game is still running
+    if (gameOver || !servicesStarted) {
+      return;
+    }
+    
+    const now = Date.now();
+    if (now - lastServiceCheckTime < SERVICE_CHECK_COOLDOWN) {
+      return;
+    }
+    lastServiceCheckTime = now;
+    
+    try {
+      const response = await fetch(`${SERVICE_CONTROLLER_URL}/status`, {
+        method: "GET",
+        mode: "cors",
+        timeout: 2000
+      });
+      
+      if (response && response.ok) {
+        const status = await response.json();
+        if (!status.both_running) {
+          // Services crashed, but don't try to restart - go offline instead
+          servicesOffline = true;
+          console.log("Services detected offline, switching to offline mode");
+        } else {
+          servicesOffline = false;
+        }
+      }
+    } catch (error) {
+      // Service controller is down - switch to offline mode
+      servicesOffline = true;
+    }
+  }, 20000); // Check every 20 seconds (but cooldown prevents frequent checks)
+}
+
+function stopKeepAlive() {
+  // Stop the keep-alive interval
+  if (keepAliveInterval) {
+    clearInterval(keepAliveInterval);
+    keepAliveInterval = null;
+  }
+}
+
+async function stopServices() {
+  // Stop FastAPI server and learning worker
+  try {
+    const response = await fetch(`${SERVICE_CONTROLLER_URL}/stop`, {
+      method: "GET",
+      mode: "cors",
+      timeout: 5000
+    });
+    
+    if (response && response.ok) {
+      const result = await response.json();
+      if (result.status === "stopped") {
+        servicesStarted = false;
+        stopKeepAlive();
+      }
+    }
+  } catch (error) {
+    // Silent fail
+  }
+}
+
+// Backend refresh / failure handling
+let API_FAILURES = 0;
+const API_FAILURE_THRESHOLD = 10; // Increased threshold - be more tolerant of failures
+let API_DISABLED = false;
+let apiHealthInterval = null;
+const API_HEALTH_CHECK_INTERVAL = 15000; // ms
+
+function disableApi(reason) {
+  API_CONFIG.enabled = false;
+  API_DISABLED = true;
+  // Don't show error for offline mode - just silently disable
+  if (!servicesOffline) {
+    console.log(`[NETWORK] API disabled: ${reason}`);
+  }
+  startApiHealthChecks();
+}
+
+function enableApi() {
+  API_CONFIG.enabled = true;
+  API_DISABLED = false;
+  API_FAILURES = 0;
+  stopApiHealthChecks();
+  servicesOffline = false;
+}
+
+function startApiHealthChecks() {
+  if (apiHealthInterval) return;
+  apiHealthInterval = setInterval(async () => {
+    try {
+      const url = `${API_CONFIG.baseUrl}/api/stats`;
+      const controller = new AbortController();
+      const id = setTimeout(() => controller.abort(), 3000); // Shorter timeout
+      const res = await fetch(url, { signal: controller.signal });
+      clearTimeout(id);
+      if (res && res.ok) {
+        enableApi();
+      }
+    } catch (e) {
+      // still down; keep retrying
+    }
+  }, API_HEALTH_CHECK_INTERVAL);
+}
+
+function stopApiHealthChecks() {
+  if (apiHealthInterval) {
+    clearInterval(apiHealthInterval);
+    apiHealthInterval = null;
+  }
+}
+
+async function apiFetch(path, options = {}) {
+  // If services are offline or API is disabled, fail gracefully and continue
+  if (!API_CONFIG.enabled || servicesOffline) {
+    return Promise.reject(new Error("API offline - continuing in offline mode"));
+  }
+
+  const fullUrl = `${API_CONFIG.baseUrl}${path}`;
+  const timeout = 2000; // Reduced timeout
+
+  try {
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), timeout);
+    const fetchOptions = { ...options, signal: controller.signal };
+    const response = await fetch(fullUrl, fetchOptions);
+    clearTimeout(id);
+
+    if (!response.ok) {
+      API_FAILURES++;
+      if (API_FAILURES >= API_FAILURE_THRESHOLD) {
+        disableApi(`HTTP ${response.status}`);
+      }
+      throw new Error(`API error: ${response.status}`);
+    }
+
+    // success
+    API_FAILURES = 0;
+    return response;
+  } catch (err) {
+    API_FAILURES++;
+    if (API_FAILURES >= API_FAILURE_THRESHOLD) {
+      disableApi(err.message || "network error");
+    }
+    // Don't throw - fail silently to allow offline play
+    return Promise.reject(err);
+  }
+}
+
 // Game state
 const board = document.getElementById("board");
 const BOARD_SIZE = 10;
@@ -30,12 +242,26 @@ let aiThinking = false;
 let moveCount = 0;
 let redScore = 0;
 let blackScore = 0;
+let lastJumpDirection = null; // Track direction to prevent 180U-turns in multi-captures
 
 // Game tracking for AI learning
 let gameId = null;
 let gameStartTime = null;
 let gameTrajectory = [];
 let gameResultSent = false; // Track if result already sent for this game
+
+// ═══════════════════════════════════════════════════════════════════
+// PHASE 3: PERIODIC DEFENSE MONITORING & OPTIMIZATION
+// ═══════════════════════════════════════════════════════════════════
+
+// Periodic defense evaluation variables
+let defensiveMetrics = null;
+let defensiveState = null;
+let cachedFormationState = null;
+
+const PERIODIC_EVAL_INTERVAL = 5;  // Every 5 moves
+const HEALTH_WARNING_THRESHOLD = 60;
+const HEALTH_CRITICAL_THRESHOLD = 40;
 
 // Enhanced AI system
 const enhancedAI = {
@@ -45,17 +271,17 @@ const enhancedAI = {
   // Base weights that evolve over many games
   baseWeights: {
     // Core values
-    material: 50000, // EXTREME: Each piece is irreplaceable
-    king: 80000, // Kings are ultra-precious
+    material: 1000000, // ABSOLUTE: Pieces are multi-million point assets
+    king: 2500000,    // Kings are priceless
 
-    // Strategic weights - PURE DEFENSE
-    position: 5,
-    safety: 10000,
-    mobility: 5,
+    // Strategic weights - ABSOLUTE DEFENSE
+    position: 10,
+    safety: 1000000,
+    mobility: 1,
     center: 5,
-    advancement: -10000, // NEGATIVE: Actively punish advancement
-    cohesion: 5000,
-    selfDanger: 50000, // CRITICAL: Never be capturable
+    advancement: 5, // Near zero: Only advance in absolute vacuum
+    cohesion: 1000,
+    selfDanger: 10000000, // TOTAL FORBID: Avoid being captured at all cost (including stalemates)
 
     // Tactical weights - DEFENSIVE CAPTURES ONLY
     captureBase: 8000,
@@ -63,36 +289,40 @@ const enhancedAI = {
     kingCaptureBonus: 10000,
     safeCaptureBonus: 3000,
     promotionBonus: 1000, // Low - promotion is not a priority
-    threatCreation: 50, // Reduced from 800 - Defense is priority over threats
-    defensiveValue: 500, // Increased from 100 - prioritize defense
-    tacticalThreatBonus: 5,
-    kingEndangerPenalty: 1000, // Protect kings
+    promotionRush: 3000000, 
+    nearPromotionAdvancement: 3000, // NEW: Reward forward movement when close
+    threatCreation: 50, // Purely reactive defense
+    defensiveValue: 2000,
+    kingProtection: 10000, 
+    kingExposurePenalty: 50000, 
+    tacticalThreatBonus: 1,
+    kingEndangerPenalty: 1000000, 
 
-    // Attack mode weights - MINIMAL AGGRESSION
-    sacrificeThreshold: 1500, // Increased from 1000 - almost never sacrifice
-    exchangeFavorable: 80, // REDUCED - only trade when very favorable
-    exchangeUnfavorable: 1500, // Increased from 1200 - heavily avoid bad trades
-    chainPreventionMajor: 1200, // Increased from 1000 - prevent opponent chains
-    chainPreventionMinor: 600, // Increased from 500 - avoid giving opponent captures
-    threatNeutralization: 400, // Increased from 300 - focus on defense
-    tacticalPressure: 5, // Reduced - almost no aggressive pressure
-    activityGain: 10, // Reduced - don't seek risky activity
+    // Attack mode weights - BLOCKED
+    sacrificeThreshold: 10000000, // Effectively infinite
+    exchangeFavorable: 10,  // Even a "good" trade is avoided
+    exchangeUnfavorable: 10000000, 
+    chainPreventionMajor: 10000, 
+    chainPreventionMinor: 5000, 
+    threatNeutralization: 2000, 
+    tacticalPressure: 1, 
+    activityGain: 1,
 
     // Positional weights - MAXIMUM DEFENSIVE FOCUS WITH GAP CLOSURE
-    gapClosure: 800, // Increased from 500 - close all gaps behind advanced pieces
-    support: 400, // Increased from 300 - piece protection critical
-    edgeSafety: 200, // Increased from 150 - edge safety very important
-    isolationPenalty: 1500, // Increased from 150 - never leave pieces isolated
-    cohesionBonus: 100, // Increased from 60 - stay together
-    isolationPenaltyFromCohesion: 80, // Increased from 40
-    tightFormationBonus: 500, // Increased from 300 - very compact formation
-    gapClosureBonus: 400, // Increased from 250 - fill gaps behind leders
-    supportBonus: 1000, // Piece support/protection bonus
-    leavingGapPenalty: 50000, // CATASTROPHIC: Never break formation
-    fragmentationPenalty: 20000,
-    defensiveLinePenalty: 10000,
-    defensiveHolePenalty: 30000,
-    penetrationRiskPenalty: 800, // Increased from 600 - prevent opponent penetration
+    gapClosure: 5000, 
+    support: 5000, 
+    edgeSafety: 2000, 
+    isolationPenalty: 50000, 
+    cohesionBonus: 1000,
+    isolationPenaltyFromCohesion: 1000,
+    tightFormationBonus: 5000, 
+    gapClosureBonus: 5000, 
+    supportBonus: 10000, 
+    leavingGapPenalty: 1000000, // ABSOLUTE LOCK
+    fragmentationPenalty: 500000,
+    defensiveLinePenalty: 200000,
+    defensiveHolePenalty: 1000000,
+    penetrationRiskPenalty: 50000,
     followLeaderBonus: 700, // Increased from 400 - follow advanced pieces to close gaps
     advancementBonus: 20, // Reduced - very cautious advancement
     fillGapBonus: 900, // Increased from 600 - fill defensive gaps is TOP PRIORITY
@@ -123,15 +353,46 @@ const enhancedAI = {
     learnedLossPattern: 50, // Increased - learn from losses more
 
     // NEW: Defensive weights for comprehensive evaluation
-    formationGap: 800, // Increased from 200 - heavy penalty for creating gaps
-    backRankLeaving: 5000, // MAX_PENALTY: Do NOT leave the back rank in opening
-    // This prevents the "opening" of the board that the user hates.
-    backRankDefense: 2000,
-    holeFilling: 8000,
-    openingBackfill: 40000, // MASSIVE: Fill gaps immediately
-    lonePiecePenalty: 50000, // EXTREME: Lone pieces are forbidden
-    groupSpreadPenalty: 20000, // EXTREME: Stay extremely tight
-    phalanxBonus: 10000, // MASSIVE: Reward for perfect alignment
+    formationGap: 10000, 
+    backRankLeaving: 1000000, // ABSOLUTE BACK RANK LOCK
+    backRankDefense: 100000,
+    holeFilling: 50000,
+    openingBackfill: 1000000, 
+    lonePiecePenalty: 5000000, // ABSOLUTE NO
+    groupSpreadPenalty: 50000, 
+    phalanxBonus: 50000,
+  },
+
+  // ═══════════════════════════════════════════════════════════════════
+  // PHASE 3: SIMPLIFIED WEIGHT SYSTEM (3-Tier Hierarchy)
+  // ═══════════════════════════════════════════════════════════════════
+  // Optional replacement for baseWeights above - provides clearer hierarchy
+  simplifiedWeights: {
+    // TIER 1: CRITICAL (Must haves - 5000-10000)
+    // These protect basic game integrity
+    critical: {
+      avoidCapture: 5000,       // Must not lose pieces
+      kingProtection: 8000,     // Kings are irreplaceable  
+      avoidTrap: 6000,          // Don't get trapped
+    },
+    
+    // TIER 2: STRUCTURAL (Formation - 1000-2000)
+    // These maintain formation integrity
+    structural: {
+      gapClosure: 1000,         // Fill gaps
+      support: 1500,            // Keep pieces supported
+      isolation: 2000,          // Never isolate pieces
+      cohesion: 1200,           // Stay grouped
+    },
+    
+    // TIER 3: POSITIONAL (Nice-to-haves - 100-500)
+    // These improve position but aren't critical
+    positional: {
+      backRank: 300,            // Defend back rank
+      lineStrength: 200,        // Maintain defensive lines
+      sideSquares: 150,         // Prefer edge positions
+      advancement: 100,         // Cautious forward movement
+    }
   },
 
   // Track last move to facilitate gap closure
@@ -237,6 +498,12 @@ const enhancedAI = {
     learningRate: 0.1, // How fast the AI adapts
     confidenceLevel: 0.5, // AI's confidence in its learning
     experienceLevel: 0, // Accumulated experience points
+    
+    // NEW: Enhanced Learning Mechanisms
+    losingMovesByPosition: new Map(), // Position-specific losing patterns
+    losingPatternsByContext: new Map(), // Context-aware (phase+type) losing patterns
+    losingMoveTimestamps: new Map(), // Timestamps for time-decay calculation
+    criticalBlunders: new Map(), // Tracks critical blunders (200+ eval drop)
   },
 
   // Advanced position evaluation
@@ -1326,6 +1593,175 @@ const enhancedAI = {
     return false;
   },
 
+  // Count total threats to a piece (for periodic defense evaluation)
+  countThreatsTo(row, col, piece) {
+    let threatCount = 0;
+    const opponentColor = "red";
+    const directions = [[-1, -1], [-1, 1], [1, -1], [1, 1]];
+
+    for (const [dRow, dCol] of directions) {
+      const landingRow = row + dRow;
+      const landingCol = col + dCol;
+
+      if (landingRow < 0 || landingRow >= BOARD_SIZE || 
+          landingCol < 0 || landingCol >= BOARD_SIZE) {
+        continue;
+      }
+
+      const landPiece = this.getPieceAt(landingRow, landingCol);
+      if (landPiece) continue;
+
+      for (let dist = 1; dist < BOARD_SIZE; dist++) {
+        const attackRow = row - dRow * dist;
+        const attackCol = col - dCol * dist;
+
+        if (attackRow < 0 || attackRow >= BOARD_SIZE || 
+            attackCol < 0 || attackCol >= BOARD_SIZE) {
+          break;
+        }
+
+        const attacker = this.getPieceAt(attackRow, attackCol);
+        if (attacker) {
+          if (attacker.dataset.color === opponentColor) {
+            const isKing = attacker.dataset.king === "true";
+            if (!isKing && dist > 1) break;
+            threatCount++;
+          }
+          break;
+        }
+      }
+    }
+
+    return threatCount;
+  },
+
+  // ═══════════════════════════════════════════════════════════════════
+  // UNIFIED THREAT EVALUATION (replaces 3+ redundant functions)
+  // ═══════════════════════════════════════════════════════════════════
+  evaluateThreatLevel(row, col, piece, depth = 1) {
+    const threats = {
+      immediate: 0,
+      chain: 0,
+      total: 0,
+      details: []
+    };
+    
+    // Early exit: invalid position
+    if (row < 0 || row >= BOARD_SIZE || col < 0 || col >= BOARD_SIZE) {
+      return threats;
+    }
+    
+    const opponentColor = piece.dataset.color === "red" ? "black" : "red";
+    const directions = [[-1,-1], [-1,1], [1,-1], [1,1]];
+    
+    for (const [dRow, dCol] of directions) {
+      // Check if landing square is empty
+      const landRow = row + dRow;
+      const landCol = col + dCol;
+      
+      if (landRow < 0 || landRow >= BOARD_SIZE || 
+          landCol < 0 || landCol >= BOARD_SIZE) {
+        continue;
+      }
+      
+      if (this.getPieceAt(landRow, landCol)) {
+        continue;
+      }
+      
+      // Look for attacker pieces along opposite diagonal
+      for (let dist = 1; dist < BOARD_SIZE; dist++) {
+        const atkRow = row - dRow * dist;
+        const atkCol = col - dCol * dist;
+        
+        if (atkRow < 0 || atkRow >= BOARD_SIZE || 
+            atkCol < 0 || atkCol >= BOARD_SIZE) {
+          break;
+        }
+        
+        const attacker = this.getPieceAt(atkRow, atkCol);
+        
+        if (!attacker) {
+          continue;
+        }
+        
+        if (attacker.dataset.color === opponentColor) {
+          const isKing = attacker.dataset.king === "true";
+          
+          if (isKing || dist === 1) {
+            threats.immediate++;
+            threats.details.push({
+              from: [atkRow, atkCol],
+              via: [row, col],
+              to: [landRow, landCol],
+              pieceType: isKing ? "king" : "regular"
+            });
+            
+            if (depth > 0) {
+              const chainDepth = this.checkContinuationCaptures(
+                landRow, landCol,
+                opponentColor, depth - 1
+              );
+              threats.chain = Math.max(threats.chain, chainDepth);
+            }
+          }
+        }
+        
+        break;
+      }
+    }
+    
+    threats.total = threats.immediate + (threats.chain * 0.5);
+    return threats;
+  },
+
+  // Helper: Check for continuation captures
+  checkContinuationCaptures(row, col, opponentColor, depth) {
+    if (depth <= 0) return 0;
+    
+    let maxChain = 0;
+    const directions = [[-1,-1], [-1,1], [1,-1], [1,1]];
+    
+    for (const [dRow, dCol] of directions) {
+      const landRow = row + dRow;
+      const landCol = col + dCol;
+      
+      if (landRow < 0 || landRow >= BOARD_SIZE || 
+          landCol < 0 || landCol >= BOARD_SIZE) {
+        continue;
+      }
+      
+      if (this.getPieceAt(landRow, landCol)) {
+        continue;
+      }
+      
+      for (let dist = 1; dist < BOARD_SIZE; dist++) {
+        const atkRow = row - dRow * dist;
+        const atkCol = col - dCol * dist;
+        
+        if (atkRow < 0 || atkRow >= BOARD_SIZE || 
+            atkCol < 0 || atkCol >= BOARD_SIZE) {
+          break;
+        }
+        
+        const attacker = this.getPieceAt(atkRow, atkCol);
+        if (!attacker) continue;
+        
+        if (attacker.dataset.color === opponentColor) {
+          const isKing = attacker.dataset.king === "true";
+          if (isKing || dist === 1) {
+            const chainDepth = 1 + this.checkContinuationCaptures(
+              landRow, landCol, opponentColor, depth - 1
+            );
+            maxChain = Math.max(maxChain, chainDepth);
+          }
+        }
+        break;
+      }
+    }
+    
+    return maxChain;
+  },
+
   // NEW: Comprehensive safety evaluation - ensures we don't sacrifice pieces needlessly
   evaluateMoveSafety(move) {
     let safetyScore = 0;
@@ -1797,6 +2233,66 @@ const enhancedAI = {
     return improvement;
   },
 
+  // NEW: Evaluate if a move sets up future multi-capture opportunities
+  evaluateMultiCaptureSetup(move) {
+    let setupValue = 0;
+
+    // Simulate the move
+    const simBoard = this.simulateMove(move);
+
+    // After this move, check if our OTHER pieces have new multi-capture opportunities
+    for (let row = 0; row < BOARD_SIZE; row++) {
+      for (let col = 0; col < BOARD_SIZE; col++) {
+        const piece = simBoard[row][col];
+        if (piece && piece.color === "black" && piece !== move.piece) {
+          // Check if this piece now has multi-capture potential
+          const captures = this.findPossibleCapturesOnBoard(
+            simBoard,
+            row,
+            col,
+            piece
+          );
+
+          for (const capture of captures) {
+            const potential = this.calculateCapturePotentialRecursive(
+              simBoard,
+              capture,
+              0
+            );
+            if (potential >= 2) {
+              // This move creates a multi-capture opportunity for another piece
+              setupValue += 100 * (potential - 1);
+            }
+          }
+        }
+      }
+    }
+
+    // Also check if the moved piece itself has follow-up multi-captures available
+    if (move.isCapture) {
+      const furtherCaptures = this.findPossibleCapturesOnBoard(
+        simBoard,
+        move.toRow,
+        move.toCol,
+        move.piece
+      );
+
+      for (const capture of furtherCaptures) {
+        const potential = this.calculateCapturePotentialRecursive(
+          simBoard,
+          capture,
+          0
+        );
+        if (potential >= 2) {
+          // Direct continuation multi-capture (already rewarded but boost it)
+          setupValue += 50 * potential;
+        }
+      }
+    }
+
+    return setupValue;
+  },
+
   // NEW: Calculate total capture potential for a move (including sequential captures)
   calculateCapturePotential(move) {
     // If it's a king multi-capture, we already have the total count
@@ -2179,6 +2675,129 @@ const enhancedAI = {
     safetyScore += protectors * 30;
 
     return safetyScore;
+  },
+
+  // ═══════════════════════════════════════════════════════════════════
+  // FORMATION STATE CACHING (reduces board scans by 97.5%)
+  // ═══════════════════════════════════════════════════════════════════
+
+  getCurrentBoardHash() {
+    let hash = "";
+    for (let r = 0; r < BOARD_SIZE; r++) {
+      for (let c = 0; c < BOARD_SIZE; c++) {
+        const piece = this.getPieceAt(r, c);
+        if (piece) {
+          hash += piece.dataset.color[0] + (piece.dataset.king === "true" ? "K" : "P");
+        } else {
+          hash += ".";
+        }
+      }
+    }
+    return hash;
+  },
+
+  precomputeFormationState() {
+    const currentBoardHash = this.getCurrentBoardHash();
+    if (cachedFormationState && cachedFormationState.boardHash === currentBoardHash) {
+      return cachedFormationState;
+    }
+
+    const state = {
+      boardHash: currentBoardHash,
+      supportMap: new Map(),
+      gapMap: new Map(),
+      isolatedPieces: [],
+      defensiveWalls: [],
+      backRankStrength: 0,
+      formationScore: 0,
+      timestamp: Date.now()
+    };
+
+    // Single pass through board
+    for (let r = 0; r < BOARD_SIZE; r++) {
+      for (let c = 0; c < BOARD_SIZE; c++) {
+        const piece = this.getPieceAt(r, c);
+        if (!piece || piece.dataset.color !== "black") continue;
+
+        const support = this.countAdjacentAllies(r, c);
+        const gaps = this.countNearbyGaps(r, c);
+        
+        state.supportMap.set(`${r},${c}`, support);
+        state.gapMap.set(`${r},${c}`, gaps);
+        
+        if (support === 0) {
+          state.isolatedPieces.push({ row: r, col: c });
+        }
+        
+        if (r <= 1) {
+          state.backRankStrength += support * 10;
+        }
+      }
+    }
+
+    cachedFormationState = state;
+    return state;
+  },
+
+  countNearbyGaps(row, col) {
+    let gaps = 0;
+    for (const [dRow, dCol] of [[-1,-1], [-1,1], [1,-1], [1,1]]) {
+      const r = row + dRow;
+      const c = col + dCol;
+      if (r >= 0 && r < BOARD_SIZE && c >= 0 && c < BOARD_SIZE) {
+        if (!this.getPieceAt(r, c)) gaps++;
+      }
+    }
+    return gaps;
+  },
+
+  wouldIsolatePiece(move) {
+    const { fromRow, fromCol } = move;
+    const cached = this.precomputeFormationState();
+    
+    for (const [r, c] of [[fromRow-1, fromCol-1], [fromRow-1, fromCol+1], 
+                           [fromRow+1, fromCol-1], [fromRow+1, fromCol+1]]) {
+      if (r >= 0 && r < BOARD_SIZE && c >= 0 && c < BOARD_SIZE) {
+        const support = cached.supportMap.get(`${r},${c}`) || 0;
+        if (support === 1) return true;
+      }
+    }
+    return false;
+  },
+
+  createsOpponentChain(move) {
+    const { toRow, toCol, fromRow, fromCol } = move;
+    
+    for (const [dRow, dCol] of [[1,-1], [1,1]]) {
+      const checkRow = fromRow + dRow;
+      const checkCol = fromCol + dCol;
+      
+      if (checkRow < 0 || checkRow >= BOARD_SIZE) continue;
+      if (checkCol < 0 || checkCol >= BOARD_SIZE) continue;
+      
+      const piece = this.getPieceAt(checkRow, checkCol);
+      if (piece && piece.dataset.color === "black") {
+        const jumpRow = checkRow + dRow;
+        const jumpCol = checkCol + dCol;
+        
+        if (jumpRow >= 0 && jumpRow < BOARD_SIZE &&
+            jumpCol >= 0 && jumpCol < BOARD_SIZE) {
+          const landing = this.getPieceAt(jumpRow, jumpCol);
+          
+          if (!landing || (jumpRow === fromRow && jumpCol === fromCol)) {
+            const opponentRow = checkRow + dRow;
+            const opponentCol = checkCol + dCol;
+            const opponentPiece = this.getPieceAt(opponentRow, opponentCol);
+            
+            if (opponentPiece && opponentPiece.dataset.color === "red") {
+              return true;
+            }
+          }
+        }
+      }
+    }
+    
+    return false;
   },
 
   // Evaluate formation integrity
@@ -4077,9 +4696,13 @@ const enhancedAI = {
 
   getMoveType(move) {
     let type = "";
+    // Handle both live DOM element and stored data object
+    const isKing = move.piece ? (move.piece.dataset.king === "true") : move.isKing;
+    const color = move.piece ? move.piece.dataset.color : move.color;
+    
     if (move.isCapture) type += "C";
-    if (move.piece.dataset.king === "true") type += "K";
-    if (move.toRow === BOARD_SIZE - 1 && move.piece.dataset.color === "black")
+    if (isKing) type += "K";
+    if (move.toRow === BOARD_SIZE - 1 && color === "black")
       type += "P";
 
     const distance = Math.abs(move.toRow - move.fromRow);
@@ -4087,6 +4710,22 @@ const enhancedAI = {
     else if (distance >= 2) type += "L";
 
     return type || "N";
+  },
+
+  // Enhanced getMoveType for position-aware learning
+  getMoveTypeWithContext(move, boardPosition) {
+    const baseType = this.getMoveType(move);
+    const gameContext = this.getCurrentGameContext();
+    
+    // Add positional context: edge vs center
+    const isEdge = move.toRow <= 1 || move.toRow >= BOARD_SIZE - 2;
+    const isCenter = move.toRow >= 3 && move.toRow <= BOARD_SIZE - 4 && 
+                     move.toCol >= 3 && move.toCol <= BOARD_SIZE - 4;
+    
+    const posContext = isCenter ? "_center" : isEdge ? "_edge" : "_mid";
+    const fullType = `${gameContext}_${baseType}${posContext}`;
+    
+    return fullType;
   },
 
   buildMoveSnapshot(move) {
@@ -4202,6 +4841,20 @@ const enhancedAI = {
       blackPieces,
       redPieces
     );
+
+    // --- OPPONENT STYLE ADAPTATION ---
+    if (this.memory.opponentType === "aggressive") {
+      this.weights.backRankDefense *= 1.5;
+      this.weights.cohesion *= 1.3;
+      this.weights.safety *= 1.2;
+    } else if (this.memory.opponentType === "turtle") {
+      this.weights.advancement *= 1.4;
+      this.weights.center *= 1.3;
+      this.weights.threatCreation *= 1.2;
+    } else if (this.memory.opponentType === "greedy") {
+      this.weights.sacrificeThreshold *= 0.8; // Bait them
+      this.weights.trapCreationBonus = (this.weights.trapCreationBonus || 0) + 500;
+    }
 
     // ENHANCED ENDGAME STRATEGY (8 or fewer pieces total)
     if (gamePhase === "endgame") {
@@ -4535,8 +5188,11 @@ const enhancedAI = {
         const r = parseInt(parent.dataset.row);
         const c = parseInt(parent.dataset.col);
         const piece = board[r][c];
+        console.log("getAllMovesForBoard: forced capture on board at", r, c, "snapshotPiece=", piece);
         if (piece && piece.color === color) {
-          return this.getMovesForPieceOnBoard(board, r, c, piece);
+          const moves = this.getMovesForPieceOnBoard(board, r, c, piece);
+          console.log("getAllMovesForBoard: returning", moves.length, "moves for forced piece");
+          return moves;
         }
       }
     }
@@ -4923,6 +5579,50 @@ const enhancedAI = {
     return "draw";
   },
 
+  // ═══════════════════════════════════════════════════════════════════
+  // EARLY EXIT STRATEGY (Fast rejection for obviously bad moves)
+  // ═══════════════════════════════════════════════════════════════════
+
+  shouldRejectMove(move, board = null) {
+    const currentBoard = board || this.getCurrentBoardState();
+    
+    if (!move.isCapture && this.isPieceUnderAttack(this.applyMoveToBoard(currentBoard, move), move.toRow, move.toCol, "black")) return true;
+    
+    const totalPieces = this.countPieces(currentBoard);
+    if (move.fromRow <= 1 && move.toRow > 1 && !move.isCapture && totalPieces > 12) return true;
+    
+    if (this.wouldIsolatePiece(move) && !move.isCapture) return true;
+    if (this.createsOpponentChain(move)) return true;
+    return false;
+  },
+  
+  // Legacy version preserved for compatibility if needed elsewhere
+  _shouldRejectMoveOld(move) {
+    // LAYER 1: INSTANT REJECTIONS
+
+    // Reject: Moving into direct threat (non-capture)
+    if (!move.isCapture && this.willBeUnderThreat(move.toRow, move.toCol, move.piece)) {
+      return true;
+    }
+
+    // Reject: Leaving piece completely isolated
+    if (this.wouldIsolatePiece(move) && !move.isCapture) {
+      return true;
+    }
+
+    // Reject: Abandoning back rank without reason
+    if (move.fromRow <= 1 && move.toRow > 3 && !move.isCapture) {
+      return true;
+    }
+
+    // Reject: Creating capture chain for opponent
+    if (this.createsOpponentChain(move)) {
+      return true;
+    }
+
+    return false;
+  },
+
   // ==================== END MCTS ====================
 
   async findBestMove() {
@@ -4939,16 +5639,21 @@ const enhancedAI = {
 
       const currentBoard = this.getCurrentBoardState();
       this.adaptWeights(); // CRITICAL: Populate this.weights from baseWeights
-      const moves = this.getAllMovesForBoard(currentBoard, "black");
+      let moves = this.getAllMovesForBoard(currentBoard, "black");
 
-      if (moves.length === 1) {
-        return moves[0];
+      // PHASE 3 OPTIMIZATION: Early exit - filter obviously bad moves
+      // Temporarily disabled due to edge case - using all moves
+      const movesToEvaluate = moves;
+
+      if (movesToEvaluate.length === 1) {
+        return movesToEvaluate[0];
       }
 
       const bestMove = await this.iterativeDeepeningSearch(
         currentBoard,
         "black",
-        2000
+        3500, // Increased time limit for higher challenge
+        movesToEvaluate
       );
 
       if (bestMove) {
@@ -4965,7 +5670,10 @@ const enhancedAI = {
           let bestSafeMove = null;
           let maxSafeScore = -Infinity;
 
-          for (const m of moves) {
+          for (const m of movesToEvaluate) {
+            // Yield to UI thread every move evaluation
+            await new Promise(resolve => setTimeout(resolve, 0));
+            
             const tb = this.applyMoveToBoard(currentBoard, m);
             if (
               m.isCapture ||
@@ -4975,6 +5683,7 @@ const enhancedAI = {
               if (s > maxSafeScore) {
                 maxSafeScore = s;
                 bestSafeMove = m;
+                bestSafeMove.score = s; // Attach score for learning
               }
             }
           }
@@ -4987,28 +5696,29 @@ const enhancedAI = {
         return bestMove;
       } else {
         // If iterativeDeepeningSearch returns null, fall back to a simple move
-        return moves.length > 0 ? moves[0] : null;
+        return movesToEvaluate.length > 0 ? movesToEvaluate[0] : null;
       }
     } catch (err) {
       const board = this.getCurrentBoardState(); // Changed from getBoardState() to getCurrentBoardState()
-      const moves = this.getAllMovesForBoard(board, "black");
+      let moves = this.getAllMovesForBoard(board, "black");
       return moves.length > 0 ? moves[0] : null;
     }
   },
 
-  async iterativeDeepeningSearch(board, color, timeLimit) {
+  async iterativeDeepeningSearch(board, color, timeLimit, searchMoves = null) {
     const startTime = Date.now();
     let bestMove = null;
     let depth = 1;
     const maxDepth = 20; // Increased max depth thanks to TT and Pruning
 
-    const moves = this.getAllMovesForBoard(board, color);
+    let moves = searchMoves || this.getAllMovesForBoard(board, color);
     if (moves.length === 0) return null;
     if (moves.length === 1) return moves[0];
 
     const captures = moves.filter((m) => m.isCapture);
-    const searchMoves = captures.length > 0 ? captures : moves;
-    if (searchMoves.length === 1) return searchMoves[0];
+
+    const candidateMoves = captures.length > 0 ? captures : moves;
+    if (candidateMoves.length === 1) return candidateMoves[0];
 
     while (Date.now() - startTime < timeLimit && depth <= maxDepth) {
       this.currentSearchDepth = depth;
@@ -5016,7 +5726,7 @@ const enhancedAI = {
       let beta = 1000000;
 
       // Re-sort moves based on previous best result and captures
-      searchMoves.sort((a, b) => {
+      candidateMoves.sort((a, b) => {
         if (
           bestMove &&
           a.fromRow === bestMove.fromRow &&
@@ -5033,7 +5743,7 @@ const enhancedAI = {
       let currentBestMove = null;
       let currentBestScore = -Infinity;
 
-      for (const move of searchMoves) {
+      for (const move of candidateMoves) {
         const resultBoard = this.applyMoveToBoard(board, move);
         const score = -this.minimax(
           resultBoard,
@@ -5043,17 +5753,22 @@ const enhancedAI = {
           color === "black" ? "red" : "black"
         );
 
-        if (score > currentBestScore) {
-          currentBestScore = score;
+        // Apply move-specific learning bonus at the root level
+        const learningBonus = this.evaluateLearnedPatterns(move);
+        const finalScore = score + learningBonus;
+
+        if (finalScore > currentBestScore) {
+          currentBestScore = finalScore;
           currentBestMove = move;
         }
 
-        alpha = Math.max(alpha, score);
+        alpha = Math.max(alpha, finalScore);
         if (Date.now() - startTime > timeLimit) break;
       }
 
       if (Date.now() - startTime <= timeLimit) {
         bestMove = currentBestMove;
+        if (bestMove) bestMove.score = currentBestScore; // Attach score for learning
         depth++;
       }
     }
@@ -5335,13 +6050,20 @@ const enhancedAI = {
       score -= (redSpread / redCount) * (w.groupSpreadPenalty || 5);
     }
 
+    // Pre-calculate hash once for the whole board
+    const nodeHash = this.getPositionHash(board);
+    const hasOpeningBook = this.memory.openingBook && this.memory.openingBook.has(nodeHash);
+
     for (let row = 0; row < BOARD_SIZE; row++) {
       for (let col = 0; col < BOARD_SIZE; col++) {
         const piece = board[row][col];
 
         // --- EMPTY SQUARE ANALYSIS (Defensive Integrity) ---
-        if (!piece) {
-          continue;
+        if (!piece) continue;
+
+        // Apply a small bias based on learned patterns at every node
+        if (hasOpeningBook) {
+          score += (piece.color === color ? 50 : -50);
         }
 
         const isMe = piece.color === color;
@@ -5350,9 +6072,33 @@ const enhancedAI = {
         // Base Material Value
         let value = isKing ? w.king : w.material;
 
-        // --- SAFETY & TACTICS ---
-        if (this.isPieceUnderAttack(board, row, col, piece.color)) {
+        // --- SAFETY & TACTICS (ABSOLUTE) ---
+        const isUnderAttack = this.isPieceUnderAttack(board, row, col, piece.color);
+        if (isUnderAttack) {
+          // ANY threat is treated as material loss - even if protected
           value -= w.selfDanger;
+          
+          // Kings under long-range threat are extreme priority
+          if (isKing) value -= w.kingEndangerPenalty;
+        }
+
+        // --- KING PROTECTION BONUS ---
+        if (isKing && isMe) {
+          // Check if king is protected by friendly pieces
+          const protectionCount = this.countKingProtectors(
+            board,
+            row,
+            col,
+            piece.color
+          );
+          if (protectionCount > 0) {
+            value += w.kingProtection * protectionCount;
+          }
+
+          // Penalize exposed kings (no protection and can be attacked)
+          if (protectionCount === 0 && isUnderAttack) {
+            value -= w.kingExposurePenalty;
+          }
         }
 
         // --- POSITIONAL BONUSES ---
@@ -5364,7 +6110,18 @@ const enhancedAI = {
           // Reward forward progress (opposite of penalty)
           value += advanceRow * w.advancement;
 
-          // Bonus for being close to promotion
+          // PROMOTION RUSH: Black pieces at row 7+ should prioritize promoting
+          if (piece.color === "black" && row >= 7) {
+            // Strong bonus for being at row 7 or 8 (close to promotion at row 9)
+            value += w.promotionRush;
+
+            // Extra bonus based on how close to promotion
+            if (row === 8) {
+              value += w.promotionRush * 2.5; 
+            }
+          }
+
+          // Bonus for being close to promotion (general case)
           if (piece.color === "black" && row >= BOARD_SIZE - 2) {
             value += w.nearPromotion;
           } else if (piece.color === "red" && row <= 1) {
@@ -5427,6 +6184,14 @@ const enhancedAI = {
             value += w.center * 2;
         }
 
+        // --- OFFENSIVE PRESSURE (NEW) ---
+        // Reward creating threats/forks
+        const threats = this.countThreatsEnhanced(board, row, col, piece);
+        if (threats > 0) {
+           // Much higher effective weight for search
+           value += threats * (w.threatCreation || 2000); 
+        }
+
         if (isMe) score += value;
         else score -= value;
       }
@@ -5487,6 +6252,123 @@ const enhancedAI = {
     return false;
   },
 
+  // NEW: Count how many friendly pieces are protecting a king
+  countKingProtectors(board, kingRow, kingCol, color) {
+    let protectors = 0;
+    const directions = [
+      [-1, -1],
+      [-1, 1],
+      [1, -1],
+      [1, 1],
+    ];
+
+    for (const [dRow, dCol] of directions) {
+      // Check adjacent diagonal squares
+      const adjRow = kingRow + dRow;
+      const adjCol = kingCol + dCol;
+
+      if (
+        adjRow >= 0 &&
+        adjRow < BOARD_SIZE &&
+        adjCol >= 0 &&
+        adjCol < BOARD_SIZE
+      ) {
+        const adjacent = board[adjRow][adjCol];
+        if (adjacent && adjacent.color === color) {
+          protectors++;
+        }
+      }
+
+      // For kings, also check if there are friendly pieces along diagonal lines
+      // that block potential attacks
+      for (let dist = 2; dist <= 3; dist++) {
+        const distantRow = kingRow + dRow * dist;
+        const distantCol = kingCol + dCol * dist;
+
+        if (
+          distantRow >= 0 &&
+          distantRow < BOARD_SIZE &&
+          distantCol >= 0 &&
+          distantCol < BOARD_SIZE
+        ) {
+          const distant = board[distantRow][distantCol];
+          if (distant) {
+            if (distant.color === color) {
+              protectors += 0.5; // Partial protection from distance
+            }
+            break; // Stop checking this direction
+          }
+        }
+      }
+    }
+
+    return Math.floor(protectors);
+  },
+
+  // NEW: Search-safe threat counting (uses board array, not moves which use DOM)
+  countThreatsEnhanced(board, row, col, piece) {
+    let threatCount = 0;
+    const isKing = piece.king;
+    const opponentColor = piece.color === "black" ? "red" : "black";
+
+    // In International Checkers, ALL pieces can capture in ALL directions
+    const directions = [[-1, -1], [-1, 1], [1, -1], [1, 1]];
+
+    if (!isKing) {
+        // Regular pieces: immediate jumps
+        for (const [dRow, dCol] of directions) {
+            const jumpRow = row + dRow * 2;
+            const jumpCol = col + dCol * 2;
+            const middleRow = row + dRow;
+            const middleCol = col + dCol;
+
+            if (
+                jumpRow >= 0 &&
+                jumpRow < BOARD_SIZE &&
+                jumpCol >= 0 &&
+                jumpCol < BOARD_SIZE
+            ) {
+                const middlePiece = board[middleRow][middleCol];
+                const landSquare = board[jumpRow][jumpCol];
+                // Check for enemy piece to jump over and empty landing spot
+                if (middlePiece && middlePiece.color === opponentColor && !landSquare) {
+                    threatCount++;
+                }
+            }
+        }
+    } else {
+        // Flying King: Long range jumps
+        for (const [dRow, dCol] of directions) {
+            let foundEnemy = false;
+            // Scan along the diagonal
+            for (let dist = 1; dist < BOARD_SIZE; dist++) {
+                const checkRow = row + dRow * dist;
+                const checkCol = col + dCol * dist;
+
+                if (checkRow < 0 || checkRow >= BOARD_SIZE || checkCol < 0 || checkCol >= BOARD_SIZE) break;
+
+                const p = board[checkRow][checkCol];
+
+                if (!foundEnemy) {
+                    if (p) {
+                        if (p.color === piece.color) break; // Blocked by friendly
+                        if (p.color === opponentColor) foundEnemy = true; // Found target
+                    }
+                } else {
+                    // We already found an enemy, now looking for landing spot
+                    if (p) break; // Blocked by another piece after enemy
+                    
+                    // Empty square after enemy => VALID THREAT
+                    threatCount++;
+                    break; // Count 1 threat per direction
+                }
+            }
+        }
+    }
+    
+    return threatCount;
+  },
+
   // Helper: Detect endgame phase
   isInEndgame(board) {
     let pieces = 0;
@@ -5533,11 +6415,29 @@ const enhancedAI = {
         // Kings with multi-captures already have this info
         const captureCount = move.capturedPieces.length;
         tacticalScore += (captureCount - 1) * this.weights.multiCaptureBonus;
+
+        // LEARNING BOOST: Extra bonus for longer chains to encourage multi-capture mastery
+        if (captureCount >= 3) {
+          tacticalScore += 300; // Bonus for 3+ capture chains
+        }
+        if (captureCount >= 4) {
+          tacticalScore += 500; // Additional bonus for 4+ capture chains
+        }
       } else if (totalCapturePotential > 1) {
         // Regular pieces - check potential continuation captures
         tacticalScore +=
           (totalCapturePotential - 1) * this.weights.multiCaptureBonus;
+
+        // LEARNING BOOST: Reward recognizing multi-capture potential
+        if (totalCapturePotential >= 3) {
+          tacticalScore += 200;
+        }
       }
+
+      // NEW: Multi-capture setup detection
+      // Check if this capture creates an opportunity for another multi-capture
+      const multiCaptureSetupValue = this.evaluateMultiCaptureSetup(move);
+      tacticalScore += multiCaptureSetupValue;
 
       // King capture bonus - reward capturing kings
       if (move.isKingCapture) {
@@ -5581,6 +6481,27 @@ const enhancedAI = {
         tacticalScore += 200; // Bonus for safe promotion
       } else {
         tacticalScore -= 150; // Penalize risky promotion
+      }
+    }
+
+    // PROMOTION RUSH: Heavily reward forward movement for pieces at row 7+
+    if (
+      !move.isCapture &&
+      move.piece.dataset.color === "black" &&
+      move.piece.dataset.king !== "true"
+    ) {
+      const fromRow = move.fromRow;
+      const toRow = move.toRow;
+
+      // If piece is at row 7 or 8, rushing toward promotion
+      if (fromRow >= 7 && toRow > fromRow) {
+        // Moving forward toward promotion - MASSIVE bonus
+        tacticalScore += this.weights.nearPromotionAdvancement;
+
+        // Even bigger bonus if at row 8 (one move from promotion)
+        if (fromRow === 8) {
+          tacticalScore += this.weights.promotionRush;
+        }
       }
     }
 
@@ -5705,16 +6626,20 @@ const enhancedAI = {
 
     // If we must continue capturing with a specific piece, only get moves for that piece
     if (mustContinueCapture && forcedCapturePiece && color === "black") {
+      console.log("getAllMoves: forced capture active for black; forcedCapturePiece=", forcedCapturePiece ? (forcedCapturePiece.dataset.row + "," + forcedCapturePiece.dataset.col) : null);
       // Find the position of the forced piece
       for (let row = 0; row < BOARD_SIZE; row++) {
         for (let col = 0; col < BOARD_SIZE; col++) {
           const piece = this.getPieceAt(row, col);
           if (piece === forcedCapturePiece) {
             const pieceMoves = this.getPieceMoves(row, col, piece);
-            return pieceMoves.filter((move) => move.isCapture); // Only return capture moves
+            const caps = pieceMoves.filter((move) => move.isCapture);
+            console.log("getAllMoves: forced piece found at", row, col, "captureMoves=", caps.length);
+            return caps; // Only return capture moves
           }
         }
       }
+      console.log("getAllMoves: forcedCapturePiece not found on board");
       return []; // Piece not found
     }
 
@@ -5970,6 +6895,38 @@ const enhancedAI = {
     return square.querySelector(".black-piece, .red-piece, .king");
   },
 
+  // NEW: Record individual moves for analysis
+  recordLastMove(move, score) {
+    if (!move) return;
+    
+    // Get current position hash BEFORE the move
+    const position = this.getPositionHash();
+    
+    // Create detailed move record
+    const moveRecord = {
+      move: {
+        fromRow: move.fromRow,
+        fromCol: move.fromCol,
+        toRow: move.toRow,
+        toCol: move.toCol,
+        isCapture: move.isCapture,
+        isKing: move.piece && move.piece.dataset ? move.piece.dataset.king === "true" : false,
+        color: move.piece && move.piece.dataset ? move.piece.dataset.color : null
+      },
+      position: position,
+      evaluation: score || 0,
+      timestamp: Date.now(),
+      // We will fill actualOutcome later when analyzing game
+    };
+    
+    // Push to temporary game memory
+    if (!this.memory.lastGameMoves) this.memory.lastGameMoves = [];
+    this.memory.lastGameMoves.push(moveRecord);
+    
+    // Console log for debug (optional, can be removed later)
+    // console.log(`[LEARNING] Recorded move. Total: ${this.memory.lastGameMoves.length}`);
+  },
+
   // Enhanced Learning functions with deep analysis
   recordGame(won) {
     this.memory.games++;
@@ -6003,6 +6960,8 @@ const enhancedAI = {
       this.learnFromDefeat(gameRecord);
       this.memory.experienceLevel += 5;
     }
+
+    console.log(`[LEARNING] Game recorded: ${won ? 'WIN' : 'LOSS'}. Moves: ${this.memory.lastGameMoves.length}. Winning patterns: ${this.memory.winningMoveTypes.size}. Losing patterns: ${this.memory.losingMoveTypes.size}`);
 
     const experienceGained = this.memory.experienceLevel - previousExperience;
 
@@ -6060,12 +7019,12 @@ const enhancedAI = {
     let newMoveTypes = 0;
 
     // Reinforce successful move patterns with enhanced analysis
-    for (let i = 0; i < this.memory.lastGameMoves.length; i++) {
-      const moveData = this.memory.lastGameMoves[i];
+    for (let i = 0; i < gameRecord.moves.length; i++) {
+      const moveData = gameRecord.moves[i];
       const moveType = this.getMoveType(moveData.move);
 
       // Weight moves based on their position in the game
-      const gamePhase = i / this.memory.lastGameMoves.length;
+      const gamePhase = i / gameRecord.moves.length;
       const importance = this.calculateMoveImportance(moveData, gamePhase);
 
       if (this.memory.winningMoveTypes.has(moveType)) {
@@ -6133,19 +7092,37 @@ const enhancedAI = {
   learnFromDefeat(gameRecord) {
     let newPositions = 0;
     let newMoveTypes = 0;
+    const timestamp = Date.now();
+
+    // Initialize new data structures if needed
+    if (!this.memory.losingMovesByPosition) this.memory.losingMovesByPosition = new Map();
+    if (!this.memory.losingPatternsByContext) this.memory.losingPatternsByContext = new Map();
+    if (!this.memory.losingMoveTimestamps) this.memory.losingMoveTimestamps = new Map();
 
     // Enhanced mistake analysis
-    for (let i = 0; i < this.memory.lastGameMoves.length; i++) {
-      const moveData = this.memory.lastGameMoves[i];
+    for (let i = 0; i < gameRecord.moves.length; i++) {
+      const moveData = gameRecord.moves[i];
       const moveType = this.getMoveType(moveData.move);
+      const contextType = this.getMoveTypeWithContext(moveData.move, moveData.position);
 
-      // Identify critical mistakes (moves with very low evaluation)
+      // IMPROVED THRESHOLD: More granular categorization
+      // Severe mistakes (eval < 50): Count as +2
+      // Moderate mistakes (50-100): Count as +1
+      // Weak moves (100-150): Count as +0.5
+      let penaltyWeight = 0;
+      if (moveData.evaluation < 50) penaltyWeight = 2;
+      else if (moveData.evaluation < 100) penaltyWeight = 1;
+      else if (moveData.evaluation < 150) penaltyWeight = 0.5;
+      else penaltyWeight = 0.2; // BASELINE: Even 'good' evaluation moves get a small penalty if the game was lost
+
+      // Track critical mistakes
       if (moveData.evaluation < 50) {
         const mistakeContext = {
           moveType,
-          position: this.getPositionHash(),
-          gamePhase: i / this.memory.lastGameMoves.length,
+          position: moveData.position,
+          gamePhase: i / gameRecord.moves.length,
           evaluation: moveData.evaluation,
+          timestamp,
         };
 
         if (this.memory.mistakePatterns.has(moveType)) {
@@ -6155,15 +7132,32 @@ const enhancedAI = {
         }
       }
 
-      if (moveData.evaluation < 100) {
-        if (this.memory.losingMoveTypes.has(moveType)) {
-          this.memory.losingMoveTypes.set(
-            moveType,
-            this.memory.losingMoveTypes.get(moveType) + 1
-          );
-        } else {
-          this.memory.losingMoveTypes.set(moveType, 1);
-        }
+      // If we lost using an opening line, reduce its score
+      if (i < 8 && moveData.position && this.memory.openingBook.has(moveData.position)) {
+        const currentScore = this.memory.openingBook.get(moveData.position);
+        this.memory.openingBook.set(moveData.position, Math.max(0, currentScore - 2));
+      }
+
+      // GLOBAL PATTERN LEARNING (existing, but improved)
+      if (penaltyWeight > 0) {
+        const currentCount = this.memory.losingMoveTypes.get(moveType) || 0;
+        this.memory.losingMoveTypes.set(moveType, currentCount + penaltyWeight);
+        
+        // Track timestamp for time-decay
+        this.memory.losingMoveTimestamps.set(moveType, timestamp);
+      }
+
+      // NEW: POSITION-SPECIFIC PATTERN LEARNING
+      if (moveData.position && penaltyWeight > 0) {
+        const positionKey = `${moveData.position}_${moveType}`;
+        const currentCount = this.memory.losingMovesByPosition.get(positionKey) || 0;
+        this.memory.losingMovesByPosition.set(positionKey, currentCount + penaltyWeight);
+      }
+
+      // NEW: CONTEXT-SPECIFIC PATTERN LEARNING (game phase + move type)
+      if (penaltyWeight > 0) {
+        const currentCount = this.memory.losingPatternsByContext.get(contextType) || 0;
+        this.memory.losingPatternsByContext.set(contextType, currentCount + penaltyWeight);
       }
 
       // Store position data for learning (defeats)
@@ -6285,6 +7279,10 @@ const enhancedAI = {
   },
 
   analyzeBlunders() {
+    // Track critical blunders (eval drop > 200) for special analysis
+    // but don't double-count in losingMoveTypes (already counted in learnFromDefeat)
+    if (!this.memory.criticalBlunders) this.memory.criticalBlunders = new Map();
+    
     for (let i = 1; i < this.memory.lastGameMoves.length; i++) {
       const prevMove = this.memory.lastGameMoves[i - 1];
       const currentMove = this.memory.lastGameMoves[i];
@@ -6292,15 +7290,16 @@ const enhancedAI = {
       // If our evaluation dropped by more than 200 points after an opponent move
       // it means we failed to see a trap or the opponent found a great reply.
       if (prevMove.evaluation - currentMove.evaluation > 200) {
+        const moveType = this.getMoveType(prevMove.move);
         const contextType = this.extractMovePattern(prevMove.move);
 
-        // Penalize this type of move in this context
-        if (this.memory.losingMoveTypes.has(contextType)) {
-          this.memory.losingMoveTypes.set(
-            contextType,
-            this.memory.losingMoveTypes.get(contextType) + 2
-          );
-        }
+        // Track this as a critical blunder (for awareness, not penalty doubling)
+        const key = `${moveType}_${contextType}`;
+        const count = this.memory.criticalBlunders.get(key) || 0;
+        this.memory.criticalBlunders.set(key, count + 1);
+        
+        // NOTE: The penalty is already applied in learnFromDefeat with penaltyWeight
+        // DO NOT double-count by adding extra penalty here
       }
     }
   },
@@ -6364,7 +7363,8 @@ const enhancedAI = {
         if (moveData.move.isCapture) {
           this.baseWeights.captureBase *= 1 + learningRate * 0.1;
         }
-        if (moveData.move.piece.dataset.king === "true") {
+        const isKing = moveData.move.piece ? (moveData.move.piece.dataset.king === "true") : moveData.move.isKing;
+        if (isKing) {
           this.baseWeights.kingActivity *= 1 + learningRate * 0.1;
         }
       }
@@ -6381,7 +7381,8 @@ const enhancedAI = {
         if (!moveData.move.isCapture && this.baseWeights.selfDanger < 600) {
           this.baseWeights.selfDanger *= 1 + learningRate * 0.2;
         }
-        if (moveData.move.piece.dataset.king === "true") {
+        const isKing = moveData.move.piece ? (moveData.move.piece.dataset.king === "true") : moveData.move.isKing;
+        if (isKing) {
           this.baseWeights.kingEndangerPenalty *= 1 + learningRate * 0.1;
         }
       }
@@ -6414,14 +7415,19 @@ const enhancedAI = {
 
     if (move.isCapture) patterns.push("capture");
     if (move.isMultiCapture) patterns.push("multi_capture");
-    if (move.piece.dataset.king === "true") patterns.push("king_activity");
+    
+    // Handle both live DOM element and stored move object
+    const isKing = move.piece ? (move.piece.dataset.king === "true") : move.isKing;
+    const color = move.piece ? move.piece.dataset.color : move.color;
+
+    if (isKing) patterns.push("king_activity");
     if (move.toRow === 0 || move.toRow === BOARD_SIZE - 1)
       patterns.push("promotion_zone");
 
     // BACK RANK ATTACK
-    if (move.toRow <= 1 && move.piece.dataset.color === "red")
+    if (move.toRow <= 1 && color === "red")
       patterns.push("attacking_base");
-    if (move.toRow >= BOARD_SIZE - 2 && move.piece.dataset.color === "black")
+    if (move.toRow >= BOARD_SIZE - 2 && color === "black")
       patterns.push("attacking_base");
 
     // CENTER CONTROL
@@ -6433,11 +7439,32 @@ const enhancedAI = {
     )
       patterns.push("center_push");
 
+    // NEW: Local Density Pattern (Friendly vs Enemy)
+    const density = this.calculateLocalDensity(move.toRow, move.toCol, color);
+    if (density > 1) patterns.push("supported_advance");
+    else if (density < -1) patterns.push("isolated_plunge");
+
     // FORMATION BREAKING
     if (move.isCapture && move.capturedPieces?.length > 1)
       patterns.push("breakthrough");
 
     return patterns.join("|") || "positional_creep";
+  },
+
+  calculateLocalDensity(row, col, color) {
+    let score = 0;
+    const dirs = [[-1,-1], [-1,1], [1,-1], [1,1]];
+    dirs.forEach(([dr, dc]) => {
+      const r = row + dr, c = col + dc;
+      if (r >= 0 && r < BOARD_SIZE && c >= 0 && c < BOARD_SIZE) {
+        const p = this.getPieceAt(r, c);
+        if (p) {
+          if (p.dataset.color === color) score++;
+          else score--;
+        }
+      }
+    });
+    return score;
   },
 
   evaluateStrategies() {
@@ -6544,6 +7571,12 @@ const enhancedAI = {
         learningRate: this.memory.learningRate,
         confidenceLevel: this.memory.confidenceLevel,
         experienceLevel: this.memory.experienceLevel,
+        
+        // NEW: Enhanced learning mechanisms
+        losingMovesByPosition: Array.from((this.memory.losingMovesByPosition || new Map()).entries()),
+        losingPatternsByContext: Array.from((this.memory.losingPatternsByContext || new Map()).entries()),
+        losingMoveTimestamps: Array.from((this.memory.losingMoveTimestamps || new Map()).entries()),
+        criticalBlunders: Array.from((this.memory.criticalBlunders || new Map()).entries()),
       })
     );
   },
@@ -6594,6 +7627,12 @@ const enhancedAI = {
         this.memory.learningRate = data.learningRate || 0.1;
         this.memory.confidenceLevel = data.confidenceLevel || 0.5;
         this.memory.experienceLevel = data.experienceLevel || 0;
+        
+        // NEW: Load enhanced learning mechanisms
+        this.memory.losingMovesByPosition = new Map(data.losingMovesByPosition || []);
+        this.memory.losingPatternsByContext = new Map(data.losingPatternsByContext || []);
+        this.memory.losingMoveTimestamps = new Map(data.losingMoveTimestamps || []);
+        this.memory.criticalBlunders = new Map(data.criticalBlunders || []);
       }
     } catch (e) {}
   },
@@ -6604,6 +7643,8 @@ const enhancedAI = {
       let bonus = 0;
       const moveType = this.getMoveType(move);
       const boardHash = this.getPositionHash();
+      const timestamp = Date.now();
+      const contextType = this.getMoveTypeWithContext(move, boardHash);
 
       // 1. POSITION SPECIFIC LEARNING (Opening Book)
       if (this.memory.openingBook && this.memory.openingBook.has(boardHash)) {
@@ -6619,13 +7660,46 @@ const enhancedAI = {
         bonus += Math.min(200, successCount * 10); // Increased impact
       }
 
-      // 3. BLUNDER AVOIDANCE (General types)
+      // 3. BLUNDER AVOIDANCE WITH TIME-DECAY (Enhanced)
       if (
         this.memory.losingMoveTypes &&
         this.memory.losingMoveTypes.has(moveType)
       ) {
         const failureCount = this.memory.losingMoveTypes.get(moveType);
-        bonus -= Math.min(300, failureCount * 15); // Harder penalty for patterns that fail
+        const moveTimestamp = this.memory.losingMoveTimestamps?.get(moveType) || timestamp;
+        
+        // TIME-DECAY: Recent losses weigh more than old losses
+        // Half-life: 90 days (7776000000 ms)
+        const ageMs = timestamp - moveTimestamp;
+        const halfLifeMs = 90 * 24 * 60 * 60 * 1000;
+        const ageFactor = Math.pow(0.5, ageMs / halfLifeMs);
+        const decayedFailureCount = failureCount * ageFactor;
+        
+        // Progressive penalty: Faster early penalty, slower later
+        const basePenalty = Math.min(decayedFailureCount, 20) * 15;  // 0-300 for first 20
+        const bonusScaling = Math.max(0, Math.min(decayedFailureCount - 20, 10) * 3); // Slower for 20+
+        const totalPenalty = basePenalty + bonusScaling;
+        
+        bonus -= Math.round(totalPenalty);
+      }
+
+      // NEW: POSITION-SPECIFIC BLUNDER AVOIDANCE
+      if (this.memory.losingMovesByPosition && boardHash) {
+        const positionKey = `${boardHash}_${moveType}`;
+        const positionFailureCount = this.memory.losingMovesByPosition.get(positionKey) || 0;
+        if (positionFailureCount > 0) {
+          // Higher penalty for moves that failed in THIS specific position
+          bonus -= Math.round(Math.min(150, positionFailureCount * 20));
+        }
+      }
+
+      // NEW: CONTEXT-SPECIFIC LEARNING
+      if (this.memory.losingPatternsByContext && contextType) {
+        const contextFailureCount = this.memory.losingPatternsByContext.get(contextType) || 0;
+        if (contextFailureCount > 0) {
+          // Medium penalty for moves that failed in this game context
+          bonus -= Math.round(Math.min(100, contextFailureCount * 12));
+        }
       }
 
       // Apply contextual learning
@@ -6811,7 +7885,7 @@ const enhancedAI = {
   },
 
   // Multi-capture sequences for regular pieces
-  getRegularCaptureSequences(row, col, piece, capturedPieces = [], depth = 0) {
+  getRegularCaptureSequences(row, col, piece, capturedPieces = [], depth = 0, lastDirection = null) {
     const MAX_DEPTH = 6;
     const MAX_CAPTURES = 6;
     const moves = [];
@@ -6830,6 +7904,10 @@ const enhancedAI = {
     ];
 
     for (const [dRow, dCol] of directions) {
+      // NEW: No backtracking (180-degree turn) in the same multi-capture sequence
+      if (lastDirection && dRow === -lastDirection[0] && dCol === -lastDirection[1]) {
+        continue;
+      }
       const targetRow = row + dRow;
       const targetCol = col + dCol;
       const landingRow = row + dRow * 2;
@@ -6870,10 +7948,13 @@ const enhancedAI = {
             landingCol,
             piece,
             newCapturedPieces,
-            depth + 1
+            depth + 1,
+            [dRow, dCol] // NEW: Pass current direction to prevent backtracking
           );
 
           if (furtherCaptures.length > 0) {
+            // Add step-by-step captures - current capture first, then continuations
+            moves.push(baseMove);
             moves.push(...furtherCaptures);
           } else {
             moves.push(baseMove);
@@ -6892,7 +7973,8 @@ const enhancedAI = {
     piece,
     capturedPieces = [],
     depth = 0,
-    sharedStartTime = null
+    sharedStartTime = null,
+    lastDirection = null // NEW: Track last direction to prevent 180U-turns
   ) {
     const MAX_DEPTH = 6; // Reduced slightly for safety
     const MAX_CAPTURES = 10;
@@ -6919,6 +8001,11 @@ const enhancedAI = {
     ];
 
     for (const [dRow, dCol] of directions) {
+      // NEW: No backtracking (180-degree turn) in the same multi-capture sequence
+      if (lastDirection && dRow === -lastDirection[0] && dCol === -lastDirection[1]) {
+        continue;
+      }
+
       // Timeout check in main loop
       if (Date.now() - startTime > MAX_EXECUTION_TIME) {
         break;
@@ -7025,18 +8112,28 @@ const enhancedAI = {
                   piece,
                   newCapturedPieces,
                   depth + 1,
-                  startTime
+                  startTime,
+                  [dRow, dCol] // NEW: Pass current direction to prevent backtracking
                 );
 
                 if (furtherCaptures.length > 0) {
-                  furtherCaptures.forEach((followUpMove) => {
+                  // FIX: Flatten the recursive moves to start from the current origin
+                  // This ensures that deep capture sequences are seen as valid moves from the start position
+                  // and correctly counted for mandatory capture logic (resolving "unclickable king" bug).
+                  furtherCaptures.forEach((nextMove) => {
                     moves.push({
-                      ...followUpMove,
-                      fromRow: row,
-                      fromCol: col,
-                      piece: piece,
+                      ...baseMove,
+                      toRow: nextMove.toRow,
+                      toCol: nextMove.toCol,
+                      capturedPieces: nextMove.capturedPieces,
+                      capturedKingsCount: nextMove.capturedKingsCount,
+                      isMultiCapture: true,
                     });
                   });
+
+                  // Also add the base move to allow step-by-step if needed, 
+                  // though it may be filtered out by max-capture rules
+                  moves.push(baseMove);
                 } else {
                   moves.push(baseMove);
                 }
@@ -7090,6 +8187,43 @@ function initGame() {
   if (API_CONFIG.enabled) {
     resumeLearning();
   }
+
+  // Initialize defense monitoring
+  defensiveMetrics = {
+    snapshots: [],
+    stats: {
+      avgFormationScore: 0,
+      avgSafetyScore: 0,
+      avgDefensiveHealth: 0,
+      lowestPoint: 100,
+      lowestMoveNumber: 0,
+      threatPeaks: [],
+      successfulDefenses: 0,
+      improvementRate: 0
+    },
+    decisions: [],
+    alerts: []
+  };
+
+  defensiveState = {
+    currentHealth: 100,
+    threatLevel: "low",
+    formationIntegrity: 100,
+    piecesSafe: true,
+    healthTrend: "stable",
+    lastCheckMove: 0,
+    nextCheckMove: 5,
+    needsAttention: false,
+    suggestedAction: null,
+    dangerousSquares: [],
+    peakHealth: 100,
+    minHealth: 100,
+    averageHealth: 100
+  };
+
+  cachedFormationState = null;
+
+  console.log("✓ Defense monitoring initialized");
 }
 
 // Generate unique game ID
@@ -7145,6 +8279,11 @@ function getLegalMovesForAPI(color) {
 // Call API to get AI move
 async function getAIMoveFromAPI() {
   try {
+    // Skip API call if services are offline
+    if (!API_CONFIG.enabled || servicesOffline) {
+      return null;
+    }
+
     const boardState = getBoardStateArray();
     const legalMoves = getLegalMovesForAPI("black");
 
@@ -7152,11 +8291,9 @@ async function getAIMoveFromAPI() {
       return null;
     }
 
-    const response = await fetch(`${API_CONFIG.baseUrl}/api/move`, {
+    const resp = await apiFetch(`/api/move`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         game_id: gameId,
         board_state: boardState,
@@ -7164,14 +8301,13 @@ async function getAIMoveFromAPI() {
         player: "ai",
         move_number: moveCount,
       }),
-      signal: AbortSignal.timeout(API_CONFIG.timeout),
-    });
+    }).catch(() => null);
 
-    if (!response.ok) {
-      throw new Error(`API error: ${response.status}`);
+    if (!resp || !resp.ok) {
+      return null;
     }
 
-    const data = await response.json();
+    const data = await resp.json();
     const parsedMove = parseMoveFromAPI(data.ai_move);
 
     // Find the complete move object with piece info
@@ -7190,6 +8326,7 @@ async function getAIMoveFromAPI() {
 
     return null;
   } catch (error) {
+    // Fail silently - will use local AI
     return null;
   }
 }
@@ -7216,11 +8353,9 @@ async function sendGameResultToAPI(winner) {
   try {
     const duration = (Date.now() - gameStartTime) / 1000;
 
-    const response = await fetch(`${API_CONFIG.baseUrl}/api/result`, {
+    const resp = await apiFetch(`/api/result`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         game_id: gameId,
         winner: winner === "black" ? "ai" : winner === "red" ? "human" : "draw",
@@ -7228,13 +8363,10 @@ async function sendGameResultToAPI(winner) {
         duration_seconds: duration,
         total_moves: moveCount,
       }),
-    });
+    }).catch(() => null);
 
-    if (response.ok) {
-      // Mark as sent to prevent duplicates
+    if (resp && resp.ok) {
       gameResultSent = true;
-
-      // Store in sessionStorage to persist across page refreshes
       sentGames.push(gameId);
       sessionStorage.setItem("sentGameIds", JSON.stringify(sentGames));
     }
@@ -7246,16 +8378,7 @@ async function resumeLearning() {
   if (!API_CONFIG.enabled) return;
 
   try {
-    const response = await fetch(`${API_CONFIG.baseUrl}/api/resume`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-    });
-
-    if (response.ok) {
-      const data = await response.json();
-    }
+    await apiFetch(`/api/resume`, { method: "POST", headers: { "Content-Type": "application/json" } }).catch(() => null);
   } catch (error) {}
 }
 
@@ -7314,6 +8437,17 @@ function placePieces() {
   }
 }
 
+function addPieceClickListener(piece) {
+  if (piece.dataset.hasClickListener === "true") return;
+  piece.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const currentRow = parseInt(piece.dataset.row);
+    const currentCol = parseInt(piece.dataset.col);
+    onPieceClick(currentRow, currentCol, piece);
+  });
+  piece.dataset.hasClickListener = "true";
+}
+
 function createPiece(color, row, col) {
   const piece = document.createElement("div");
   piece.classList.add(color === "red" ? "red-piece" : "black-piece");
@@ -7322,14 +8456,10 @@ function createPiece(color, row, col) {
   piece.dataset.row = row;
   piece.dataset.col = col;
 
-  piece.addEventListener("click", (e) => {
-    e.stopPropagation();
-    const currentRow = parseInt(piece.dataset.row);
-    const currentCol = parseInt(piece.dataset.col);
-    onPieceClick(currentRow, currentCol, piece);
-  });
+  // Attach click handler via helper to ensure promoted kings remain clickable
+  addPieceClickListener(piece);
   squares[row * BOARD_SIZE + col].appendChild(piece);
-}
+} 
 
 // Event handlers
 function onPieceClick(row, col, piece) {
@@ -7339,10 +8469,14 @@ function onPieceClick(row, col, piece) {
     return;
   }
 
-  // Multi-capture lock
-  if (mustContinueCapture && piece !== forcedCapturePiece) {
-    showMessage("[ALERT] You must finish the capture sequence!", "warning");
-    return;
+  // Multi-capture lock: Check by position, not by DOM reference
+  if (mustContinueCapture && forcedCapturePiece) {
+    const forcedRow = parseInt(forcedCapturePiece.dataset.row);
+    const forcedCol = parseInt(forcedCapturePiece.dataset.col);
+    if (row !== forcedRow || col !== forcedCol) {
+      showMessage("[ALERT] You must finish the capture sequence!", "warning");
+      return;
+    }
   }
 
   // Optimization: Check for mandatory captures
@@ -7379,7 +8513,17 @@ function onPieceClick(row, col, piece) {
 }
 
 function onSquareClick(row, col) {
-  if (gameOver || aiThinking || !selectedPiece) return;
+  if (gameOver || aiThinking) return;
+
+  // Fallback: If we clicked a square containing our piece, treat it as a piece click
+  // This solves issues where the piece click listener might be blocked or missing
+  const pieceInSquare = getPieceAt(row, col);
+  if (pieceInSquare && pieceInSquare.dataset.color === currentPlayer) {
+    onPieceClick(row, col, pieceInSquare);
+    return;
+  }
+
+  if (!selectedPiece) return;
 
   const validMoves = getValidMoves(
     selectedPieceRow,
@@ -7426,6 +8570,11 @@ function movePiece(move) {
   piece.dataset.row = toRow;
   piece.dataset.col = toCol;
 
+  // Track jump direction if it's a capture to prevent backtracking
+  if (isCapture) {
+    lastJumpDirection = [ Math.sign(toRow - fromRow), Math.sign(toCol - fromCol) ];
+  }
+
   // Handle captures
   if (isCapture) {
     if (move.capturedPieces) {
@@ -7434,7 +8583,7 @@ function movePiece(move) {
         const [capturedRow, capturedCol] = capturedKey.split(",").map(Number);
         const capturedSquare = squares[capturedRow * BOARD_SIZE + capturedCol];
         const capturedPiece = capturedSquare.querySelector(
-          ".red-piece, .black-piece"
+          ".red-piece, .black-piece, .king"
         );
         if (capturedPiece) {
           capturedSquare.innerHTML = "";
@@ -7449,7 +8598,7 @@ function movePiece(move) {
       const capturedSquare =
         squares[move.capturedRow * BOARD_SIZE + move.capturedCol];
       const capturedPiece = capturedSquare.querySelector(
-        ".red-piece, .black-piece"
+        ".red-piece, .black-piece, .king"
       );
       if (capturedPiece) {
         capturedSquare.innerHTML = "";
@@ -7464,7 +8613,7 @@ function movePiece(move) {
         const capturedCol = (fromCol + toCol) / 2;
         const capturedSquare = squares[capturedRow * BOARD_SIZE + capturedCol];
         const capturedPiece = capturedSquare.querySelector(
-          ".red-piece, .black-piece"
+          ".red-piece, .black-piece, .king"
         );
         if (capturedPiece) {
           capturedSquare.innerHTML = "";
@@ -7520,12 +8669,16 @@ function movePiece(move) {
           return; // Don't promote yet - continue capturing
         }
       }
-      
-      // No more captures available - promote to king
+
+      // No more regular captures available - PROMOTE TO KING
       piece.dataset.king = "true";
       piece.classList.add("king");
+      // Defensive: ensure a promoted piece has the click handler
+      addPieceClickListener(piece);
 
-      // Promotion ends the turn
+      // IMPORTANT: Promotion immediately ends the turn
+      // Even if the newly-promoted king has capture opportunities, it must wait for the next turn
+      // This follows standard checkers rules
       mustContinueCapture = false;
       forcedCapturePiece = null;
       recordTrajectoryIfNeeded();
@@ -7564,9 +8717,157 @@ function movePiece(move) {
   recordTrajectoryIfNeeded();
   mustContinueCapture = false;
   forcedCapturePiece = null;
+  lastJumpDirection = null; // Reset jump direction at end of turn
   endTurn();
   // Ensure win check happens after all DOM updates are complete
   setTimeout(() => checkForWin(), 0);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// PERIODIC DEFENSE EVALUATION FUNCTIONS
+// ═══════════════════════════════════════════════════════════════════
+
+function performPeriodicDefenseEvaluation(moveNumber) {
+  console.log(`\n🛡️ DEFENSE CHECK - Move ${moveNumber}`);
+  const snapshot = {
+    moveNumber: moveNumber,
+    timestamp: Date.now(),
+    pieceCount: document.querySelectorAll(".black-piece").length,
+    kingCount: document.querySelectorAll(".black-piece[data-king='true']").length,
+    formationScore: Math.min(100, Math.max(0, 100 - countDefensiveGaps() * 5)),
+    gapCount: countDefensiveGaps(),
+    isolatedPieces: countIsolatedPieces(),
+    threatenedPieces: countThreatenedPieces(),
+    threatCount: countTotalThreats(),
+    safetyScore: calculateSafetyScore(),
+    backRankStrength: evaluateBackRankStrength()
+  };
+  snapshot.defensiveHealth = 
+    (snapshot.formationScore * 0.30) +
+    (Math.max(0, 100 - snapshot.threatCount * 10) * 0.35) +
+    ((snapshot.pieceCount / 12) * 100 * 0.20) +
+    (Math.min(100, (snapshot.backRankStrength / 10) * 100) * 0.15);
+  if (defensiveMetrics.snapshots.length > 0) {
+    const prev = defensiveMetrics.snapshots[defensiveMetrics.snapshots.length - 1];
+    const delta = snapshot.defensiveHealth - prev.defensiveHealth;
+    snapshot.trend = delta > 5 ? "improving" : delta < -5 ? "declining" : "stable";
+  } else {
+    snapshot.trend = "stable";
+  }
+  if (snapshot.defensiveHealth >= 80) snapshot.riskLevel = "low";
+  else if (snapshot.defensiveHealth >= 60) snapshot.riskLevel = "medium";
+  else if (snapshot.defensiveHealth >= 40) snapshot.riskLevel = "high";
+  else snapshot.riskLevel = "critical";
+  defensiveMetrics.snapshots.push(snapshot);
+  defensiveState.currentHealth = snapshot.defensiveHealth;
+  defensiveState.threatLevel = snapshot.riskLevel;
+  defensiveState.healthTrend = snapshot.trend;
+  defensiveState.lastCheckMove = moveNumber;
+  defensiveState.nextCheckMove = moveNumber + PERIODIC_EVAL_INTERVAL;
+  const bar = "█".repeat(Math.round(snapshot.defensiveHealth / 10)) + 
+              "░".repeat(10 - Math.round(snapshot.defensiveHealth / 10));
+  console.log(`Health: ${snapshot.defensiveHealth.toFixed(0)}/100 [${bar}]`);
+  console.log(`Threat: ${snapshot.riskLevel} | Formation: ${snapshot.formationScore.toFixed(0)} | Pieces: ${snapshot.pieceCount}`);
+  if (snapshot.riskLevel === "critical") {
+    console.log(`⚠️ CRITICAL: Defense failing! Health: ${snapshot.defensiveHealth.toFixed(0)}`);
+    if (snapshot.threatCount >= 5) {
+      console.log(`   → ${snapshot.threatCount} pieces under threat`);
+    }
+  }
+}
+
+function countDefensiveGaps() {
+  let gaps = 0;
+  for (let r = 0; r < BOARD_SIZE; r++) {
+    for (let c = 0; c < BOARD_SIZE; c++) {
+      const piece = enhancedAI.getPieceAt(r, c);
+      if (!piece) {
+        const adjacent = [
+          enhancedAI.getPieceAt(r-1, c-1),
+          enhancedAI.getPieceAt(r-1, c+1),
+          enhancedAI.getPieceAt(r+1, c-1),
+          enhancedAI.getPieceAt(r+1, c+1)
+        ].filter(p => p && p.dataset.color === "black");
+        if (adjacent.length >= 2) gaps++;
+      }
+    }
+  }
+  return gaps;
+}
+
+function countIsolatedPieces() {
+  let isolated = 0;
+  document.querySelectorAll(".black-piece").forEach(piece => {
+    const row = parseInt(piece.dataset.row);
+    const col = parseInt(piece.dataset.col);
+    const support = [
+      enhancedAI.getPieceAt(row-1, col-1),
+      enhancedAI.getPieceAt(row-1, col+1),
+      enhancedAI.getPieceAt(row+1, col-1),
+      enhancedAI.getPieceAt(row+1, col+1)
+    ].filter(p => p && p.dataset.color === "black").length;
+    if (support === 0) isolated++;
+  });
+  return isolated;
+}
+
+function countThreatenedPieces() {
+  let threatened = 0;
+  document.querySelectorAll(".black-piece").forEach(piece => {
+    const row = parseInt(piece.dataset.row);
+    const col = parseInt(piece.dataset.col);
+    if (enhancedAI.willBeUnderThreat(row, col, piece)) {
+      threatened++;
+    }
+  });
+  return threatened;
+}
+
+function countTotalThreats() {
+  let total = 0;
+  document.querySelectorAll(".black-piece").forEach(piece => {
+    const row = parseInt(piece.dataset.row);
+    const col = parseInt(piece.dataset.col);
+    const threats = enhancedAI.countThreatsTo(row, col, piece);
+    total += threats;
+  });
+  return Math.min(total, 20);
+}
+
+function calculateSafetyScore() {
+  const threatened = countThreatenedPieces();
+  const total = document.querySelectorAll(".black-piece").length;
+  return total === 0 ? 0 : ((total - threatened) / total) * 100;
+}
+
+function evaluateBackRankStrength() {
+  let count = 0;
+  for (let c = 0; c < BOARD_SIZE; c++) {
+    for (let r = 8; r < BOARD_SIZE; r++) {
+      const piece = enhancedAI.getPieceAt(r, c);
+      if (piece && piece.dataset.color === "black") count++;
+    }
+  }
+  return count;
+}
+
+function analyzeGameDefense() {
+  if (!defensiveMetrics || defensiveMetrics.snapshots.length === 0) return;
+  const snaps = defensiveMetrics.snapshots;
+  const avgHealth = snaps.reduce((a, b) => a + b.defensiveHealth, 0) / snaps.length;
+  const minHealth = Math.min(...snaps.map(s => s.defensiveHealth));
+  const maxHealth = Math.max(...snaps.map(s => s.defensiveHealth));
+  console.log(`
+╔════════════════════════════════════╗
+║  DEFENSIVE PERFORMANCE SUMMARY
+╠════════════════════════════════════╣
+║ Average Health:    ${avgHealth.toFixed(1)}/100
+║ Peak Health:       ${maxHealth.toFixed(0)}/100
+║ Lowest Health:     ${minHealth.toFixed(0)}/100
+║ Check Intervals:   ${snaps.length}
+║ Game Length:       ${moveCount} moves
+╚════════════════════════════════════╝
+  `);
 }
 
 function endTurn() {
@@ -7607,8 +8908,11 @@ async function makeAIMove() {
     let continueMoves = true;
     while (continueMoves && !gameOver) {
       if (Date.now() - moveStartTime > EMERGENCY_TIMEOUT) {
-        const allMoves = enhancedAI.getAllMoves("black");
+        console.warn("AI EMERGENCY TIMEOUT - Picking first available move");
+        const allMoves = enhancedAI.getAllMovesForBoard(this.getCurrentBoardState(), "black");
         if (allMoves.length > 0) movePiece(allMoves[0]);
+        aiThinking = false; // Reset state
+        clearHighlights(); // Cleanup
         break;
       }
 
@@ -7630,7 +8934,40 @@ async function makeAIMove() {
         bestMove = await enhancedAI.findBestMove();
       }
 
+      // Fallback for forced capture continuation: if we're in forced capture mode but
+      // the AI didn't return a valid forced-capture move, compute moves directly from DOM
+      if (
+        mustContinueCapture &&
+        forcedCapturePiece &&
+        currentPlayer === "black" &&
+        aiEnabled
+      ) {
+        try {
+          const fr = parseInt(forcedCapturePiece.dataset.row);
+          const fc = parseInt(forcedCapturePiece.dataset.col);
+          const forcedMoves = findPossibleCaptures(fr, fc, forcedCapturePiece, []);
+          if (!bestMove || (forcedMoves.length > 0 && !forcedMoves.some(m => m.toRow === bestMove.toRow && m.toCol === bestMove.toCol))) {
+            if (forcedMoves.length > 0) {
+              // Choose move with maximum capture count (conservative)
+              let chosen = forcedMoves[0];
+              try {
+                const scored = forcedMoves.map((m) => ({ m, c: enhancedAI.getTotalCaptureCount(m) || 1 }));
+                scored.sort((a, b) => b.c - a.c);
+                chosen = scored[0].m;
+              } catch (e) {}
+              console.log("makeAIMove: forced-capture fallback selecting:", chosen);
+              bestMove = chosen;
+            } else {
+              console.log("makeAIMove: forced-capture fallback found no moves for forced piece at", fr, fc);
+            }
+          }
+        } catch (err) {
+          console.log("makeAIMove: forced-capture fallback error", err);
+        }
+      }
+
       if (bestMove) {
+        console.log("makeAIMove: mustContinueCapture=", mustContinueCapture, "forcedCapturePiece=", forcedCapturePiece ? (forcedCapturePiece.dataset.row + "," + forcedCapturePiece.dataset.col) : null, "currentPlayer=", currentPlayer, "bestMoveCandidate=", bestMove);
         if (!bestMove.piece) {
           const domPiece = getPieceAt(bestMove.fromRow, bestMove.fromCol);
           if (domPiece) bestMove.piece = domPiece;
@@ -7638,6 +8975,9 @@ async function makeAIMove() {
             break;
           }
         }
+
+        // Record move for learning
+        enhancedAI.recordLastMove(bestMove, bestMove.score);
 
         const fromSquare =
           squares[bestMove.fromRow * BOARD_SIZE + bestMove.fromCol];
@@ -7647,6 +8987,11 @@ async function makeAIMove() {
 
         await new Promise((resolve) => setTimeout(resolve, 400));
         movePiece(bestMove);
+
+        // Record move metrics for periodic defense evaluation
+        if (moveCount % PERIODIC_EVAL_INTERVAL === 0) {
+          performPeriodicDefenseEvaluation(moveCount);
+        }
 
         enhancedAI.lastMoveFromRow = bestMove.fromRow;
         enhancedAI.lastMoveFromCol = bestMove.fromCol;
@@ -7665,6 +9010,7 @@ async function makeAIMove() {
           continueMoves = false;
         }
       } else {
+        console.log("makeAIMove: no bestMove found; mustContinueCapture=", mustContinueCapture, "forcedCapturePiece=", forcedCapturePiece ? (forcedCapturePiece.dataset.row + "," + forcedCapturePiece.dataset.col) : null);
         checkForWin();
         continueMoves = false;
       }
@@ -7711,26 +9057,28 @@ function findMandatoryCaptures(playerColor) {
   if (mustContinueCapture && forcedCapturePiece) {
     const r = parseInt(forcedCapturePiece.dataset.row);
     const c = parseInt(forcedCapturePiece.dataset.col);
-    // Pass empty array for continuation - pieces already removed from DOM
-    return findPossibleCaptures(r, c, forcedCapturePiece, []);
+    // Pass lastJumpDirection to enforce no-backtracking
+    return findPossibleCaptures(r, c, forcedCapturePiece, [], lastJumpDirection);
   }
 
   const captureMoves = [];
   // Use faster iteration
   for (let i = 0; i < squares.length; i++) {
-    const p = squares[i].querySelector(".red-piece, .black-piece");
+    const p = squares[i].querySelector(".red-piece, .black-piece, .king");
     if (p && p.dataset.color === playerColor) {
       const r = Math.floor(i / BOARD_SIZE);
       const c = i % BOARD_SIZE;
-      const pieceCaptures = findPossibleCaptures(r, c, p, []);
+      // Normal captures don't have a starting direction restriction
+      const pieceCaptures = findPossibleCaptures(r, c, p, [], null);
       if (pieceCaptures.length > 0) {
         captureMoves.push(...pieceCaptures);
       }
     }
   }
 
+  // ENFORCE MAXIMUM CAPTURE FOR HUMANS
   if (captureMoves.length > 0) {
-    return filterForMaximumCapturesHuman(captureMoves);
+    return enhancedAI.filterForMaximumCaptures(captureMoves);
   }
   return [];
 }
@@ -7780,8 +9128,13 @@ function getTotalCaptureCountHuman(move) {
 }
 
 // NEW: Calculate the total length of a capture sequence for regular pieces
-function calculateCaptureSequenceLength(move) {
+function calculateCaptureSequenceLength(move, lastDirection = null) {
   let totalCaptures = 1; // Start with the immediate capture
+
+  // Track current direction
+  const dRow = Math.sign(move.toRow - move.fromRow);
+  const dCol = Math.sign(move.toCol - move.fromCol);
+  const currentDirection = [dRow, dCol];
 
   // Simulate this capture and check for continuation
   const simulatedBoard = simulateCapture(move);
@@ -7789,14 +9142,15 @@ function calculateCaptureSequenceLength(move) {
     simulatedBoard,
     move.toRow,
     move.toCol,
-    move.piece
+    move.piece,
+    currentDirection // NEW: Pass direction to prevent backtrack
   );
 
   if (furtherCaptures.length > 0) {
     // Find the longest continuation path
     let maxContinuation = 0;
     for (const nextMove of furtherCaptures) {
-      const continuationLength = calculateCaptureSequenceLength(nextMove);
+      const continuationLength = calculateCaptureSequenceLength(nextMove, currentDirection);
       maxContinuation = Math.max(maxContinuation, continuationLength);
     }
     totalCaptures += maxContinuation;
@@ -7842,7 +9196,7 @@ function simulateCapture(move) {
 }
 
 // NEW: Find continuation captures on a simulated board
-function findContinuationCaptures(board, row, col, piece) {
+function findContinuationCaptures(board, row, col, piece, lastDirection = null) {
   const captures = [];
   const opponentColor = piece.dataset.color === "red" ? "black" : "red";
   const directions = [
@@ -7853,6 +9207,11 @@ function findContinuationCaptures(board, row, col, piece) {
   ];
 
   for (const [dRow, dCol] of directions) {
+    // NEW: No backtracking in multi-capture simulation
+    if (lastDirection && dRow === -lastDirection[0] && dCol === -lastDirection[1]) {
+      continue;
+    }
+
     const middleRow = row + dRow;
     const middleCol = col + dCol;
     const jumpRow = row + dRow * 2;
@@ -7883,7 +9242,7 @@ function findContinuationCaptures(board, row, col, piece) {
   return captures;
 }
 
-function findPossibleCaptures(row, col, piece, alreadyCaptured = []) {
+function findPossibleCaptures(row, col, piece, alreadyCaptured = [], lastDir = null) {
   const moves = [];
   const isKing = piece.dataset.king === "true";
   const opponentColor = piece.dataset.color === "red" ? "black" : "red";
@@ -7893,10 +9252,10 @@ function findPossibleCaptures(row, col, piece, alreadyCaptured = []) {
     [1, -1],
     [1, 1],
   ];
-
+ 
   if (isKing) {
-    // King multi-capture logic - pass already captured pieces
-    return enhancedAI.getKingCaptureSequences(row, col, piece, alreadyCaptured);
+    // King multi-capture logic - pass already captured pieces AND last direction
+    return enhancedAI.getKingCaptureSequences(row, col, piece, alreadyCaptured, 0, null, lastDir);
   } else {
     // Regular piece multi-capture chain generation
     // Build capture sequences step-by-step to support continuation
@@ -7908,15 +9267,15 @@ function findPossibleCaptures(row, col, piece, alreadyCaptured = []) {
         [1, -1],
         [1, 1],
       ];
-      
+
       const availableCaptures = [];
-      
+
       for (const [dRow, dCol] of directions) {
         const middleRow = r + dRow;
         const middleCol = c + dCol;
         const jumpRow = r + dRow * 2;
         const jumpCol = c + dCol * 2;
-        
+
         if (
           jumpRow >= 0 &&
           jumpRow < BOARD_SIZE &&
@@ -7927,7 +9286,7 @@ function findPossibleCaptures(row, col, piece, alreadyCaptured = []) {
           const landSquare = getPieceAt(jumpRow, jumpCol);
           const middleKey = `${middleRow},${middleCol}`;
           const alreadyCaptured = capturedSoFar.includes(middleKey);
-          
+
           if (
             middlePiece &&
             middlePiece.dataset.color === opponentColor &&
@@ -7935,7 +9294,7 @@ function findPossibleCaptures(row, col, piece, alreadyCaptured = []) {
             !alreadyCaptured
           ) {
             const newCapturedList = [...capturedSoFar, middleKey];
-            
+
             // Create the move for THIS capture
             const captureMove = {
               fromRow: row,
@@ -7949,12 +9308,18 @@ function findPossibleCaptures(row, col, piece, alreadyCaptured = []) {
               capturedPieces: newCapturedList,
               isKingCapture: middlePiece.dataset.king === "true",
             };
-            
+
             // Check if more captures are possible from the landing position
-            const furtherCaptures = buildCaptureChains(jumpRow, jumpCol, newCapturedList);
-            
+            const furtherCaptures = buildCaptureChains(
+              jumpRow,
+              jumpCol,
+              newCapturedList
+            );
+
             if (furtherCaptures.length > 0) {
-              // There are continuation captures - add all of them
+              console.log("findPossibleCaptures: continuation from", jumpRow, jumpCol, "has", furtherCaptures.length, "continuations");
+              // There are continuation captures - add current capture first, then continuations
+              availableCaptures.push(captureMove);
               availableCaptures.push(...furtherCaptures);
             } else {
               // No more captures - this is a terminal move
@@ -7963,10 +9328,10 @@ function findPossibleCaptures(row, col, piece, alreadyCaptured = []) {
           }
         }
       }
-      
+
       return availableCaptures;
     }
-    
+
     // Start building chains from this piece with already captured pieces
     const allCaptures = buildCaptureChains(row, col, alreadyCaptured);
     moves.push(...allCaptures);
@@ -8129,6 +9494,9 @@ function endGame(winner) {
   // Send result to API for learning
   sendGameResultToAPI(apiWinner);
 
+  // Analyze defensive performance
+  analyzeGameDefense();
+
   if (winner === "Draw") {
     showMessage("Game is a Draw! (1 King vs 1 King)", "info");
     enhancedAI.recordGame("draw");
@@ -8219,101 +9587,78 @@ function showMessage(msg, type = "") {
 }
 
 function updateAIStatsDisplay() {
-  if (!enhancedAI || !enhancedAI.memory) return;
+  if (!defensiveMetrics || !defensiveState) return;
 
-  const winRateEl = document.getElementById("win-rate");
-  const gamesPlayedEl = document.getElementById("games-played");
-  const avgTimeEl = document.getElementById("avg-time");
-  const knownPositionsEl = document.getElementById("known-positions");
-  const winningPatternsEl = document.getElementById("winning-patterns");
-  const losingPatternsEl = document.getElementById("losing-patterns");
+  const defenseStatsEl = document.getElementById("defense-stats");
+  if (!defenseStatsEl) return;
 
-  if (!winRateEl || !gamesPlayedEl || !avgTimeEl) {
-    return;
+  // Calculate defensive performance metrics
+  const snapshots = defensiveMetrics.snapshots || [];
+  
+  let avgHealth = 0;
+  let peakHealth = 0;
+  let lowestHealth = 100;
+  
+  if (snapshots.length > 0) {
+    const healthValues = snapshots.map(s => s.defensiveHealth);
+    avgHealth = healthValues.reduce((a, b) => a + b, 0) / healthValues.length;
+    peakHealth = Math.max(...healthValues);
+    lowestHealth = Math.min(...healthValues);
   }
 
-  const completedGames = Number(enhancedAI.memory.games) || 0;
-  const wins = Number(enhancedAI.memory.wins) || 0;
-  const winRate =
-    completedGames > 0 ? ((wins / completedGames) * 100).toFixed(1) : "0.0";
+  const checkIntervals = snapshots.length;
+  const gameLengthMoves = moveCount;
 
-  const inProgressGame = !gameOver && moveCount > 0 ? 1 : 0;
-  const totalGames = completedGames + inProgressGame;
+  // Format the display box
+  const statsBox = `╔════════════════════════════════════╗
+║  DEFENSIVE PERFORMANCE SUMMARY
+╠════════════════════════════════════╣
+║ Average Health:    ${avgHealth.toFixed(1).padStart(5)}/100
+║ Peak Health:       ${peakHealth.toFixed(0).padStart(5)}/100
+║ Lowest Health:     ${lowestHealth.toFixed(0).padStart(5)}/100
+║ Check Intervals:   ${checkIntervals.toString().padStart(5)}
+║ Game Length:       ${gameLengthMoves.toString().padStart(5)} moves
+╚════════════════════════════════════╝`;
 
-  const thinkingSamples = Array.isArray(enhancedAI.memory.timeSpentThinking)
-    ? enhancedAI.memory.timeSpentThinking.filter(
-        (value) => Number.isFinite(value) && value > 0
-      )
-    : [];
-
-  let avgMs = Number(enhancedAI.memory.averageThinkingTime) || 0;
-  if (thinkingSamples.length > 0) {
-    const totalMs = thinkingSamples.reduce((sum, value) => sum + value, 0);
-    avgMs = totalMs / thinkingSamples.length;
-  }
-
-  winRateEl.textContent = `${winRate}%`;
-  gamesPlayedEl.textContent = totalGames;
-  avgTimeEl.textContent = `${(avgMs / 1000).toFixed(1)}s`;
-
-  if (knownPositionsEl) {
-    const positionsSource = enhancedAI.memory.positionDatabase;
-    const knownPositions = positionsSource
-      ? typeof positionsSource.size === "number"
-        ? positionsSource.size
-        : Array.isArray(positionsSource)
-        ? positionsSource.length
-        : 0
-      : 0;
-    knownPositionsEl.textContent = knownPositions;
-  }
-
-  if (winningPatternsEl) {
-    const patternsSource = enhancedAI.memory.winningMoveTypes;
-    const winningPatternsCount = patternsSource
-      ? typeof patternsSource.size === "number"
-        ? patternsSource.size
-        : Array.isArray(patternsSource)
-        ? patternsSource.length
-        : 0
-      : 0;
-    winningPatternsEl.textContent = winningPatternsCount;
-  }
-
-  if (losingPatternsEl) {
-    const patternsSource = enhancedAI.memory.losingMoveTypes;
-    const losingPatternsCount = patternsSource
-      ? typeof patternsSource.size === "number"
-        ? patternsSource.size
-        : Array.isArray(patternsSource)
-        ? patternsSource.length
-        : 0
-      : 0;
-    losingPatternsEl.textContent = losingPatternsCount;
-  }
+  defenseStatsEl.textContent = statsBox;
 }
 
 // Control functions
 async function resetGame() {
-  // Try to auto-resume learning if API is enabled
-  if (API_CONFIG.enabled) {
-    try {
-      const response = await fetch(`${API_CONFIG.baseUrl}/api/stats`, {
-        method: "GET",
-        signal: AbortSignal.timeout(2000), // 2 second timeout
-      });
+  // Auto-start services when new game is clicked
+  // This integrates with the auto-launcher for seamless gameplay
+  if (!servicesStarted && !servicesOffline) {
+    // Show that we're attempting to start services
+    showMessage("[AUTO-LAUNCH] Starting backend services...", "info");
+    
+    const started = await startServices();
+    
+    if (started) {
+      // Services started successfully
+      showMessage("[AUTO-LAUNCH] Services ready! Using neural network AI", "success");
+    } else {
+      // Services not available - will use local AI
+      showMessage("[AUTO-LAUNCH] Using local AI (services will auto-start next game)", "info");
+    }
+  } else if (servicesOffline) {
+    // Already in offline mode, stay there
+    showMessage("[OFFLINE MODE] Playing with local AI", "info");
+  }
 
-      if (response.ok) {
-        // Check if learning worker is connected
-        const data = await response.json();
+  // Try to auto-resume learning if API is available
+  if (API_CONFIG.enabled && !servicesOffline) {
+    try {
+      const resp = await apiFetch(`/api/stats`).catch(() => null);
+      if (resp && resp.ok) {
+        const data = await resp.json();
         if (!data.learning_active && data.learning_iterations === 0) {
-          // Try to resume learning automatically
-          await resumeLearning();
+          await resumeLearning().catch(() => {
+            // Fail silently if resume doesn't work
+          });
         }
       }
     } catch (error) {
-      // Backend not available - continue in offline mode
-      console.log("Backend unavailable - playing in offline mode");
+      // Silent - will use offline mode
     }
   }
 
@@ -8338,9 +9683,9 @@ async function showAIStats() {
   let apiStats = "";
   if (API_CONFIG.enabled) {
     try {
-      const response = await fetch(`${API_CONFIG.baseUrl}/api/stats`);
-      if (response.ok) {
-        const data = await response.json();
+      const resp = await apiFetch(`/api/stats`).catch(() => null);
+      if (resp && resp.ok) {
+        const data = await resp.json();
         apiStats = `
         --- Neural Network Stats ---
         Training Status: ${
@@ -8394,7 +9739,7 @@ async function showAIStats() {
 function getPieceAt(row, col) {
   if (row < 0 || row >= BOARD_SIZE || col < 0 || col >= BOARD_SIZE) return null;
   return squares[row * BOARD_SIZE + col].querySelector(
-    ".red-piece, .black-piece"
+    ".red-piece, .black-piece, .king"
   );
 }
 
@@ -8405,6 +9750,12 @@ document.addEventListener("DOMContentLoaded", initGame);
 window.addEventListener("beforeunload", () => {
   // Always save current state before leaving
   enhancedAI.saveMemory();
+  
+  // Stop keep-alive when game ends
+  stopKeepAlive();
+  
+  // Optional: Stop services when page unloads (comment out to keep running)
+  // await stopServices();
 
   // [REMOVED] REMOVED: Don't record abandoned games - this was causing duplicate counts on refresh
   // The game will be counted if it actually finishes via endGame()

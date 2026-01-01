@@ -1,5 +1,8 @@
+--extra-index-url https://download.pytorch.org/whl/cpu
+
 fastapi
-uvicorn[standard]
+uvicorn; sys_platform == "win32"
+uvicorn[standard]; sys_platform != "win32"
 torch
 numpy
 pydantic

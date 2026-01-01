@@ -16,6 +16,7 @@ class TrajectoryStep(BaseModel):
     action: Dict[str, Any]  # {"from": [row, col], "to": [row, col]}
     reward: float = 0.0
     next_state: List[List[Optional[Dict[str, Any]]]]
+    player: Optional[str] = None  # "black" (AI) or "red" (human)
 
 
 class ResultRequest(BaseModel):

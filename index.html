@@ -52,35 +52,26 @@
           <div class="panel-title">AI Control</div>
           <div
             class="buttons-section"
-            style="flex-direction: column; width: 100%; margin-bottom: 15px"
+            style="flex-direction: column; margin-bottom: 15px"
           >
-            <button
-              class="control-btn"
-              onclick="showAIStats()"
-              style="width: 100%"
-            >
+            <button class="control-btn" onclick="showAIStats()">
               AI Statistics
             </button>
           </div>
           <div class="ai-status" id="ai-status">Grandmaster Level</div>
-
-          <div class="stats-grid">
-            <div class="stat-item">
-              <div>Win Rate</div>
-              <div id="win-rate">0%</div>
-            </div>
-            <div class="stat-item">
-              <div>Games</div>
-              <div id="games-played">0</div>
-            </div>
-            <div class="stat-item">
-              <div>Avg Time</div>
-              <div id="avg-time">0s</div>
-            </div>
-            <div class="stat-item">
-              <div>Known Positions</div>
-              <div id="known-positions">0</div>
-            </div>
+          <div class="defensive-summary" id="defensive-summary">
+            <pre id="defense-stats">
+╔══════════════════════╗
+   DEFENSE SUMMARY
+╠══════════════════════╣
+Avg Health:   --/100
+Peak Health:  --/100
+Low Health:   --/100
+Checks:       0
+Moves:        0
+╚══════════════════════╝</pre
+            >
+            
           </div>
         </div>
       </div>

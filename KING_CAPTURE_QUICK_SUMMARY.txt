@@ -1,0 +1,70 @@
+# Red King Capture Fix - Quick Summary
+
+## The Bug 🐛
+Red pieces promoted to kings were NOT checking for king-only capture opportunities immediately after promotion.
+
+```
+Red piece reaches row 0 (promotion row):
+  ├─ Check regular piece captures ✓
+  ├─ Promote to king ✓
+  └─ ❌ MISSING: Check king captures before ending turn
+```
+
+## The Fix ✅
+After promotion, immediately check if the newly-promoted king can capture using its enhanced movement abilities.
+
+```
+Red piece reaches row 0 (promotion row):
+  ├─ Check regular piece captures ✓
+  ├─ Promote to king ✓
+  ├─ ✅ NEW: Check king captures
+  └─ If king can capture → continue sequence
+```
+
+## Why It Matters 📋
+- Mandatory capture rule: ALL possible captures must be completed
+- Kings can capture in directions regular pieces cannot
+- A newly-promoted king might have capture opportunities the piece didn't have before
+- Game must not let a turn end if captures are still available
+
+## Example Scenario 🎮
+
+### Before Fix:
+```
+Red piece on row 1 captures enemy, lands on row 0
+→ Gets promoted to king
+→ TURN ENDS (doesn't check king captures)
+→ ❌ Player misses capture opportunity that king could make
+```
+
+### After Fix:
+```
+Red piece on row 1 captures enemy, lands on row 0
+→ Gets promoted to king
+→ Check: Can king capture anything? (including backwards!)
+→ YES → Continue capture sequence (king captures more pieces)
+→ NO → Turn ends normally
+→ ✅ All legal captures are mandatory and completed
+```
+
+## Impact 🎯
+
+| Aspect | Before | After |
+|--------|--------|-------|
+| King captures after promotion | Not checked | ✅ Checked |
+| Mandatory captures enforced | Partial | ✅ Full |
+| Game rules compliance | Missing edge case | ✅ Complete |
+| Normal gameplay | Unchanged | Unchanged |
+| Performance | - | Same |
+
+## Files Changed 📝
+- `script.js` - Function `movePiece()` (promotion logic section)
+
+## Testing 🧪
+- Play games where red pieces reach row 0 via capture
+- Game should now show additional capture options if the newly-promoted king can capture
+- Turn should only end when no more captures are available
+
+---
+
+**Status**: ✅ FIXED - Red king capture system now fully implements mandatory multi-capture rules

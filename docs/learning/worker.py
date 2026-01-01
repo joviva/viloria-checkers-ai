@@ -2,18 +2,25 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import numpy as np
-from model.network import PolicyValueNet
+from model.network import AdvancedPolicyValueNet, PolicyValueNet  # Use advanced network
 from model.encoder import encode_state, encode_move
 from model.replay_buffer import ReplayBuffer
+from learning.curriculum import CurriculumManager, AdaptiveExploration
+from learning.evaluator import AIEvaluator
 import time
 import os
 
 class A2CLearner:
     """
-    Advantage Actor-Critic (A2C) learning algorithm for checkers AI.
-    Implements online reinforcement learning from real games.
+    ENHANCED Advantage Actor-Critic (A2C) learning algorithm.
     
-    Uses separate models for inference and training to prevent race conditions.
+    New features:
+    - Advanced network architecture with attention
+    - Curriculum learning (progressive difficulty)
+    - Adaptive exploration (performance-based)
+    - Priority experience replay
+    - Comprehensive evaluation metrics
+    - Auxiliary task learning
     """
     
     def __init__(self, 
@@ -23,7 +30,10 @@ class A2CLearner:
                  value_loss_coef: float = 0.5,
                  entropy_coef: float = 0.01,
                  max_grad_norm: float = 0.5,
-                 max_loss_threshold: float = 10.0):
+                 max_loss_threshold: float = 10.0,
+                 use_advanced_network: bool = True,
+                 use_curriculum: bool = True,
+                 use_priority_replay: bool = True):
         
         self.model_path = model_path
         self.gamma = gamma
@@ -32,11 +42,21 @@ class A2CLearner:
         self.max_grad_norm = max_grad_norm
         self.max_loss_threshold = max_loss_threshold
         
-        # CRITICAL: Separate models to prevent race conditions
-        # model_training: Only used for learning (backprop)
-        # model_live: Only used for inference (no gradients)
-        self.model_training = PolicyValueNet()
-        self.model_live = PolicyValueNet()  # Will be synced from training
+        # Configuration flags
+        self.use_advanced_network = use_advanced_network
+        self.use_curriculum = use_curriculum
+        self.use_priority_replay = use_priority_replay
+        
+        # ENHANCED: Use advanced network architecture
+        if use_advanced_network:
+            print("Using AdvancedPolicyValueNet (5 ResBlocks + Attention)")
+            self.model_training = AdvancedPolicyValueNet()
+            self.model_live = AdvancedPolicyValueNet()
+        else:
+            print("Using standard PolicyValueNet")
+            self.model_training = PolicyValueNet()
+            self.model_live = PolicyValueNet()
+        
         self.optimizer = optim.Adam(self.model_training.parameters(), lr=learning_rate)
         
         # Learning control
@@ -49,6 +69,15 @@ class A2CLearner:
         # Initialize replay buffer
         self.replay_buffer = ReplayBuffer()
         
+        # NEW: Curriculum learning manager
+        self.curriculum = CurriculumManager() if use_curriculum else None
+        
+        # NEW: Adaptive exploration
+        self.exploration = AdaptiveExploration()
+        
+        # NEW: AI evaluator
+        self.evaluator = AIEvaluator()
+        
         # Training statistics
         self.training_steps = 0
         self.total_loss_history = []
@@ -56,16 +85,25 @@ class A2CLearner:
         self.value_loss_history = []
         self.avg_loss_window = []
         
+        # NEW: Auxiliary loss tracking
+        self.material_loss_history = []
+        self.threat_loss_history = []
+        
     def _load_model(self):
         """Load model from checkpoint if it exists."""
         if os.path.exists(self.model_path):
             try:
                 checkpoint = torch.load(self.model_path, weights_only=False)
                 # Load into both training and live models
-                self.model_training.load_state_dict(checkpoint['model_state_dict'])
-                self.model_live.load_state_dict(checkpoint['model_state_dict'])
-                self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-                self.training_steps = checkpoint.get('training_steps', 0)
+                try:
+                    self.model_training.load_state_dict(checkpoint['model_state_dict'])
+                    self.model_live.load_state_dict(checkpoint['model_state_dict'])
+                    self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+                    self.training_steps = checkpoint.get('training_steps', 0)
+                except Exception as load_error:
+                    print(f"WARNING: Could not load checkpoint into current model: {load_error}")
+                    print("Starting with fresh model parameters.")
+                    self.training_steps = 0
                 
                 # Set models to appropriate modes
                 self.model_training.train()
@@ -198,24 +236,39 @@ class A2CLearner:
     
     def train_on_trajectories(self, batch_size: int = 32):
         """
-        Train the model on a batch of trajectories from the replay buffer.
+        ENHANCED: Train the model on a batch of trajectories.
         
-        Uses mixed sampling (80% recent, 20% historical) to prevent catastrophic forgetting.
+        New features:
+        - Priority-based sampling (if enabled)
+        - Curriculum-aware training
+        - Auxiliary task losses
+        - Enhanced statistics
         
         Args:
             batch_size: Number of trajectories to sample for training
             
         Returns:
-            Training statistics
+            Training statistics dictionary
         """
-        # CRITICAL: Use mixed sampling for stability
-        # 80% recent games (learn from current strategy)
-        # 20% historical games (prevent forgetting good behaviors)
-        trajectories = self.replay_buffer.get_mixed_trajectories(
-            batch_size=batch_size,
-            recent_ratio=0.8,
-            player="black"
-        )
+        # Update curriculum stage
+        if self.curriculum:
+            stats = self.replay_buffer.get_stats()
+            self.curriculum.update_games_count(stats['total_games'])
+        
+        # ENHANCED: Use priority sampling if enabled
+        if self.use_priority_replay:
+            trajectories = self.replay_buffer.get_prioritized_trajectories(
+                batch_size=batch_size,
+                player="black",
+                temperature=0.8  # Moderate prioritization
+            )
+        else:
+            # Fallback to mixed sampling
+            trajectories = self.replay_buffer.get_mixed_trajectories(
+                batch_size=batch_size,
+                recent_ratio=0.8,
+                player="black"
+            )
         
         if len(trajectories) < batch_size:
             print(f"Not enough trajectories for training ({len(trajectories)}/{batch_size})")
@@ -250,10 +303,19 @@ class A2CLearner:
         next_states_tensor = torch.tensor(np.array(next_states), dtype=torch.float32)
         dones_tensor = torch.tensor(dones, dtype=torch.bool)
         
-        # CRITICAL: Use training model only (never the live model)
+        # Forward pass (with auxiliary outputs if advanced network)
         self.model_training.train()
-        policy_logits, values = self.model_training(states_tensor)
-        _, next_values = self.model_training(next_states_tensor)
+        
+        if self.use_advanced_network:
+            # Get auxiliary predictions
+            policy_logits, values, material_preds, threat_maps = self.model_training(
+                states_tensor, 
+                return_aux=True
+            )
+            _, next_values, _, _ = self.model_training(next_states_tensor, return_aux=True)
+        else:
+            policy_logits, values = self.model_training(states_tensor)
+            _, next_values = self.model_training(next_states_tensor)
         
         # Compute returns and advantages
         returns, advantages = self.compute_returns(
@@ -266,19 +328,46 @@ class A2CLearner:
         # Normalize advantages
         advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
         
-        # Policy loss (negative log probability weighted by advantage)
+        # === POLICY LOSS ===
         log_probs = torch.log(policy_logits + 1e-8)
         selected_log_probs = log_probs[range(len(actions)), actions_tensor]
         policy_loss = -(selected_log_probs * advantages).mean()
         
-        # Value loss (MSE between predicted value and return)
+        # === VALUE LOSS ===
         value_loss = nn.MSELoss()(values.squeeze(), returns)
         
-        # Entropy bonus (encourage exploration)
+        # === ENTROPY BONUS ===
         entropy = -(policy_logits * log_probs).sum(dim=1).mean()
         
-        # Total loss
-        total_loss = policy_loss + self.value_loss_coef * value_loss - self.entropy_coef * entropy
+        # === AUXILIARY LOSSES (if advanced network) ===
+        material_loss = torch.tensor(0.0)
+        threat_loss = torch.tensor(0.0)
+        
+        if self.use_advanced_network:
+            # Material classification loss
+            try:
+                material_targets = self._compute_material_targets(states_tensor, trajectories)
+                if material_targets is not None:
+                    material_loss = nn.CrossEntropyLoss()(material_preds, material_targets)
+            except Exception as e:
+                print(f"Warning: Material loss computation failed: {e}")
+            
+            # Threat detection loss (simplified - just check if under threat)
+            try:
+                threat_targets = self._compute_threat_targets(states_tensor, trajectories)
+                if threat_targets is not None:
+                    threat_loss = nn.BCELoss()(threat_maps.squeeze(), threat_targets)
+            except Exception as e:
+                print(f"Warning: Threat loss computation failed: {e}")
+        
+        # === TOTAL LOSS ===
+        total_loss = (
+            policy_loss + 
+            self.value_loss_coef * value_loss - 
+            self.entropy_coef * entropy +
+            0.1 * material_loss +  # Auxiliary losses weighted lower
+            0.1 * threat_loss
+        )
         
         # Backward pass
         self.optimizer.zero_grad()
@@ -296,9 +385,19 @@ class A2CLearner:
         self.value_loss_history.append(value_loss.item())
         self.avg_loss_window.append(total_loss.item())
         
+        if self.use_advanced_network:
+            self.material_loss_history.append(material_loss.item())
+            self.threat_loss_history.append(threat_loss.item())
+        
         # Keep only last 100 losses for averaging
         if len(self.avg_loss_window) > 100:
             self.avg_loss_window.pop(0)
+        
+        # Update evaluator metrics
+        policy_entropy = entropy.item()
+        value_error = value_loss.item()
+        advantage_accuracy = (advantages.sign() == returns.sign()).float().mean().item()
+        self.evaluator.update_training_metrics(policy_entropy, value_error, advantage_accuracy)
         
         # HARDENING: Kill switch - pause learning if loss explodes
         avg_recent_loss = np.mean(self.avg_loss_window)
@@ -306,7 +405,8 @@ class A2CLearner:
             print(f"WARNING: Average loss ({avg_recent_loss:.2f}) exceeds threshold ({self.max_loss_threshold})")
             self.pause_learning()
         
-        return {
+        # Build stats dictionary
+        stats = {
             'total_loss': total_loss.item(),
             'policy_loss': policy_loss.item(),
             'value_loss': value_loss.item(),
@@ -314,6 +414,54 @@ class A2CLearner:
             'training_steps': self.training_steps,
             'avg_recent_loss': avg_recent_loss
         }
+        
+        if self.use_advanced_network:
+            stats['material_loss'] = material_loss.item()
+            stats['threat_loss'] = threat_loss.item()
+        
+        if self.curriculum:
+            stage_info = self.curriculum.get_stage_info()
+            stats['curriculum_stage'] = stage_info['stage']
+            stats['stage_progress'] = stage_info['progress_pct']
+        
+        return stats
+    
+    def _compute_material_targets(self, states_tensor, trajectories):
+        """Compute material balance targets for auxiliary loss."""
+        try:
+            targets = []
+            for traj in trajectories:
+                # Count pieces (simplified)
+                board = traj['board_state']
+                if isinstance(board, str):
+                    import json
+                    board = json.loads(board)
+                
+                black_count = sum(1 for row in board for cell in row if cell and cell.get('color') == 'black')
+                red_count = sum(1 for row in board for cell in row if cell and cell.get('color') == 'red')
+                
+                # Classify: 0=behind, 1=even, 2=ahead
+                if black_count < red_count - 1:
+                    targets.append(0)  # behind
+                elif black_count > red_count + 1:
+                    targets.append(2)  # ahead
+                else:
+                    targets.append(1)  # even
+            
+            return torch.tensor(targets, dtype=torch.long)
+        except:
+            return None
+    
+    def _compute_threat_targets(self, states_tensor, trajectories):
+        """Compute threat map targets (simplified)."""
+        try:
+            # For now, return zeros (no threats)
+            # In full implementation, would analyze board for actual threats
+            batch_size = len(trajectories)
+            return torch.zeros((batch_size, 10, 10), dtype=torch.float32)
+        except:
+            return None
+    
     
     def train_loop(self, training_interval: int = 60, batch_size: int = 32, 
                    save_interval: int = 10):

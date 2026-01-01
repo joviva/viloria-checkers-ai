@@ -50,6 +50,7 @@ class ReplayBuffer:
                     next_state TEXT,
                     done INTEGER,
                     player TEXT,
+                    priority REAL DEFAULT 1.0,
                     FOREIGN KEY (game_id) REFERENCES games(game_id)
                 )
             """)
@@ -63,6 +64,12 @@ class ReplayBuffer:
             cursor.execute("""
                 CREATE INDEX IF NOT EXISTS idx_timestamp 
                 ON games(timestamp)
+            """)
+            
+            # NEW: Index  for priority-based sampling
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_priority
+                ON trajectories(priority DESC)
             """)
             
             conn.commit()
@@ -86,18 +93,27 @@ class ReplayBuffer:
     
     def add_trajectory(self, game_id: str, move_number: int, board_state: Dict,
                       action: Dict, reward: float, next_state: Dict,
-                      done: bool, player: str):
-        """Add a single state-action-reward transition."""
+                      done: bool, player: str, priority: float = 1.0):
+        """
+        Add a single state-action-reward transition.
+        
+        Args:
+            priority: Importance weight for sampling (higher = more important)
+                      Default 1.0. Use higher values for:
+                      - Multi-captures (2.0-5.0)
+                      - Game-winning moves (3.0)
+                      - Critical defensive saves (2.0)
+        """
         with self.lock:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
                     INSERT INTO trajectories 
-                    (game_id, move_number, board_state, action, reward, next_state, done, player)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    (game_id, move_number, board_state, action, reward, next_state, done, player, priority)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (game_id, move_number, json.dumps(board_state), 
                       json.dumps(action), reward, json.dumps(next_state), 
-                      int(done), player))
+                      int(done), player, priority))
                 conn.commit()
     
     def add_batch_trajectories(self, game_id: str, trajectories: List[Dict]):
@@ -205,6 +221,72 @@ class ReplayBuffer:
         random.shuffle(mixed)
         
         return mixed
+    
+    def get_prioritized_trajectories(self, batch_size: int = 32, player: str = "black", 
+                                     temperature: float = 1.0) -> List[Dict]:
+        """
+        ENHANCED: Get trajectories with priority-based sampling.
+        
+        Higher priority trajectories are more likely to be sampled.
+        This accelerates learning of important patterns (multi-captures, critical moves).
+        
+        Args:
+            batch_size: Number of trajectories to sample
+            player: Player color to filter by
+            temperature: Sampling temperature (higher = more uniform, lower = more greedy)
+                        Default 1.0. Use 0.5 for more aggressive prioritization.
+            
+        Returns:
+            List of prioritized trajectories
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            
+            # Get all trajectories with their priorities
+            cursor.execute("""
+                SELECT t.board_state, t.action, t.reward, t.next_state, t.done, t.priority,
+                       ROW_NUMBER() OVER (ORDER BY RANDOM()) as rn
+                FROM trajectories t
+                WHERE t.player = ?
+            """, (player,))
+            
+            rows = cursor.fetchall()
+            
+            if not rows:
+                return []
+            
+            # Extract priorities and apply temperature
+            priorities = [row[5] ** (1.0 / temperature) for row in rows]
+            total_priority = sum(priorities)
+            
+            if total_priority == 0:
+                # Fallback to uniform sampling
+                probabilities = [1.0 / len(rows)] * len(rows)
+            else:
+                probabilities = [p / total_priority for p in priorities]
+            
+            # Sample based on priorities
+            import numpy as np
+            selected_indices = np.random.choice(
+                len(rows), 
+                size=min(batch_size, len(rows)), 
+                replace=False,
+                p=probabilities
+            )
+            
+            # Build result
+            results = []
+            for idx in selected_indices:
+                row = rows[idx]
+                results.append({
+                    'board_state': json.loads(row[0]),
+                    'action': json.loads(row[1]),
+                    'reward': row[2],
+                    'next_state': json.loads(row[3]),
+                    'done': bool(row[4])
+                })
+            
+            return results
     
     def get_game_trajectory(self, game_id: str) -> List[Dict]:
         """Get all trajectories for a specific game."""

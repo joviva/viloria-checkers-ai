@@ -1,0 +1,68 @@
+# Auto-Start Services - Quick Setup
+
+## TL;DR
+
+1. **Run once**: Double-click `START_AUTO_LAUNCHER.bat` (keep it open)
+2. **Open game**: Open `index.html` in browser
+3. **Play**: Click "New Game" → Services auto-start → Enjoy!
+
+---
+
+## What's Different
+
+| Before | After |
+|--------|-------|
+| Run `START_SERVICES.bat` first | Auto-starts automatically |
+| Manual setup before playing | Just click "New Game" |
+| Might forget to start services | Impossible - happens on click |
+| Cleaner workflow ✅ | Even cleaner ✅✅ |
+
+---
+
+## The Flow
+
+```
+Click "New Game"
+    ↓
+Auto-launcher starts services (if needed)
+    ↓
+Game shows status message
+    ↓
+Services ready in 1-3 seconds
+    ↓
+Game starts with neural network AI
+    ↓
+Play!
+```
+
+---
+
+## Messages You'll See
+
+✅ `[AUTO-LAUNCH] Services ready! Using neural network AI`  
+ℹ️ `[AUTO-LAUNCH] Using local AI`  
+ℹ️ `[OFFLINE MODE] Playing with local AI`
+
+All modes work great - just different performance levels.
+
+---
+
+## Why This Is Better
+
+- **Automatic** - No more remembering to start services
+- **Integrated** - Clicking "New Game" triggers everything
+- **Smart** - Only starts if needed
+- **Fallback** - Works offline if services unavailable
+- **Simple** - One batch file, then just play
+
+---
+
+## Files
+
+- `START_AUTO_LAUNCHER.bat` - Run this once, leave open
+- `auto_launcher.py` - Backend that auto-starts services
+- `script.js` - Updated with auto-start integration
+
+---
+
+**Ready to go! Just run START_AUTO_LAUNCHER.bat and play!** 🎮
