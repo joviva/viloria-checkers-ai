@@ -9,29 +9,49 @@ import json
 import random
 import uuid
 from datetime import datetime
-
+import torch
+import numpy as np
+import os
+from model.network import AdvancedPolicyValueNet
+from model.encoder import encode_state, encode_move
 
 class SelfPlayGenerator:
     """Generates self-play games for training data diversity."""
     
-    def __init__(self, replay_buffer=None):
+    def __init__(self, replay_buffer=None, model_path="checkpoints/model.pth"):
         """
         Initialize self-play generator.
         
         Args:
             replay_buffer: ReplayBuffer instance to store generated games
+            model_path: Path to load trained model weight
         """
         self.replay_buffer = replay_buffer
         self.games_generated = 0
         
-    def generate_games(self, num_games=10, max_moves=200, exploration_epsilon=0.3):
+        # Load Model
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.model = AdvancedPolicyValueNet().to(self.device)
+        self.model.eval()
+        
+        if os.path.exists(model_path):
+            try:
+                checkpoint = torch.load(model_path, map_location=self.device)
+                self.model.load_state_dict(checkpoint['model_state_dict'])
+                print(f"SelfPlayGenerator loaded model from {model_path}")
+            except Exception as e:
+                print(f"Warning: SelfPlayGenerator could not load model: {e}")
+        else:
+            print("Warning: SelfPlayGenerator using untrained model (random weights)")
+        
+    def generate_games(self, num_games=10, max_moves=200, exploration_epsilon=0.1):
         """
         Generate self-play training games.
         
         Args:
             num_games: Number of games to generate
             max_moves: Maximum moves per game (prevents infinite games)
-            exploration_epsilon: Exploration rate for move selection
+            exploration_epsilon: Exploration rate (lower is better for self-play quality)
             
         Returns:
             List of generated game records
@@ -66,7 +86,7 @@ class SelfPlayGenerator:
         # Initialize board (10x10 international draughts starting position)
         board = self._initialize_board()
         game_history = []
-        current_player = "black"  # AI always plays black
+        current_player = "black"  # AI starts (or random if desired, but std is white/black logic)
         move_count = 0
         
         # Play game
@@ -78,17 +98,20 @@ class SelfPlayGenerator:
                 # No legal moves - player loses
                 break
             
-            # Select move (with exploration)
+            # Select move (Network or Exploration)
             if random.random() < exploration_epsilon:
                 move = random.choice(legal_moves)
             else:
-                # Simple heuristic selection (prefer captures)
-                move = self._select_best_move_simple(board, legal_moves, current_player)
+                move = self._select_move_network(board, legal_moves, current_player)
             
             # Apply move
             next_board = self._apply_move(board, move, current_player)
             
-            # Record transition (only for black/AI moves)
+            # Record transition (only for black/AI moves, or BOTH for full self-play training?)
+            # Standard is to record perspectives for the learner. 
+            # Our learner assumes "black" is the learning agent.
+            # But in self-play, BOTH are learning agents.
+            # For simplicity, we record BLACK's moves as training data.
             if current_player == "black":
                 game_history.append({
                     "board_state": self._board_to_json(board),
@@ -138,6 +161,58 @@ class SelfPlayGenerator:
             "moves": len(game_history),
             "trajectory": game_history
         }
+
+    def _select_move_network(self, board, legal_moves, color):
+        """Select best move using the neural network."""
+        try:
+            # 1. Encode State
+            # Note: We need to respect the perspective. 
+            # The encoder expects the board and handles channel assignment.
+            # We assume the model learns from "Black's perspective" typically.
+            # But if Red is playing, should we flip? 
+            # Current encoder handles pieces by color name.
+            json_board = self._board_to_json(board)
+            state_tensor = torch.tensor(encode_state(json_board), dtype=torch.float32).unsqueeze(0).to(self.device)
+            
+            with torch.no_grad():
+                policy_logits, _ = self.model(state_tensor)
+            
+            # 2. Mask Legal Moves
+            # Retrieve encoded indices for all legal moves
+            move_candidates = []
+            for move in legal_moves:
+                # "from" and "to" are [row, col] lists
+                idx = encode_move(
+                    move["from"][0], move["from"][1],
+                    move["to"][0], move["to"][1]
+                )
+                if idx != -1:
+                    move_candidates.append((move, idx))
+            
+            if not move_candidates:
+                return random.choice(legal_moves)
+            
+            # Extract probabilities for legal moves
+            best_move = None
+            best_prob = -1.0
+            
+            # Simple greedy selection from logits
+            # For better play, we could use softmax distribution sampling
+            policy_probs = torch.softmax(policy_logits, dim=1).cpu().numpy()[0]
+            
+            for move, idx in move_candidates:
+                if idx < len(policy_probs):
+                    prob = policy_probs[idx]
+                    if prob > best_prob:
+                        best_prob = prob
+                        best_move = move
+            
+            return best_move if best_move else random.choice(legal_moves)
+            
+        except Exception as e:
+            print(f"Error in network move selection: {e}")
+            return random.choice(legal_moves)
+
     
     def _initialize_board(self):
         """Initialize 10x10 checkers board with starting position."""
@@ -211,7 +286,10 @@ class SelfPlayGenerator:
         return moves
     
     def _select_best_move_simple(self, board, legal_moves, color):
-        """Simple heuristic move selection (prefer captures)."""
+        """
+        DEPRECATED: Simple heuristic move selection.
+        Kept for fallback if needed.
+        """
         # Prioritize captures
         capture_moves = [m for m in legal_moves if m.get("captures", 0) > 0]
         

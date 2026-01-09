@@ -57,7 +57,7 @@ Start-Sleep -Seconds 5
 
 # Verify API is running
 try {
-    $response = Invoke-RestMethod -Uri "http://localhost:8000/ai/stats" -Method GET -TimeoutSec 3 -ErrorAction Stop
+    $response = Invoke-RestMethod -Uri "http://localhost:8000/api/stats" -Method GET -TimeoutSec 3 -ErrorAction Stop
     Write-Host "[OK] API server is running" -ForegroundColor Green
     Write-Host "    Total games: $($response.total_games)" -ForegroundColor Gray
     Write-Host "    Total trajectories: $($response.total_trajectories)" -ForegroundColor Gray
@@ -83,7 +83,7 @@ Write-Host ""
 Write-Host "[INFO] Access points:" -ForegroundColor Cyan
 Write-Host "  - API Server:  http://localhost:8000" -ForegroundColor White
 Write-Host "  - API Docs:    http://localhost:8000/docs" -ForegroundColor White
-Write-Host "  - Stats:       http://localhost:8000/ai/stats" -ForegroundColor White
+Write-Host "  - Stats:       http://localhost:8000/api/stats" -ForegroundColor White
 Write-Host ""
 Write-Host "[INFO] Frontend:" -ForegroundColor Cyan
 Write-Host "  - Game: $ProjectRoot\index.html" -ForegroundColor White
@@ -96,7 +96,7 @@ Write-Host ""
 
 # Check current status
 try {
-    $stats = Invoke-RestMethod -Uri "http://localhost:8000/ai/stats" -Method GET -TimeoutSec 2 -ErrorAction Stop
+    $stats = Invoke-RestMethod -Uri "http://localhost:8000/api/stats" -Method GET -TimeoutSec 2 -ErrorAction Stop
     Write-Host "[LIVE STATUS]" -ForegroundColor Cyan
     Write-Host "  Learning Active: $($stats.learning_active)" -ForegroundColor $(if ($stats.learning_active) { "Green" } else { "Yellow" })
     Write-Host "  Learning Iterations: $($stats.learning_iterations)" -ForegroundColor White

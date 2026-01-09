@@ -50,7 +50,7 @@ echo [INFO] Waiting for API server to start...
 timeout /t 5 /nobreak >nul
 
 REM Verify API is running
-powershell -Command "try { Invoke-RestRequest -Uri 'http://localhost:8000/ai/stats' -Method GET -TimeoutSec 2 | Out-Null; Write-Host '[OK] API server is running' } catch { Write-Host '[WARNING] API server may not be ready yet' }" 2>nul
+powershell -Command "try { Invoke-RestRequest -Uri 'http://localhost:8000/api/stats' -Method GET -TimeoutSec 2 | Out-Null; Write-Host '[OK] API server is running' } catch { Write-Host '[WARNING] API server may not be ready yet' }" 2>nul
 
 echo.
 echo [2] Starting Learning Worker...
@@ -66,7 +66,7 @@ echo.
 echo [INFO] Access points:
 echo   - API Server:  http://localhost:8000
 echo   - API Docs:    http://localhost:8000/docs
-echo   - Stats:       http://localhost:8000/ai/stats
+echo   - Stats:       http://localhost:8000/api/stats
 echo.
 echo [INFO] Frontend:
 echo   - Open: %PROJECT_ROOT%\index.html in your browser

@@ -1,18 +1,59 @@
 // Enhanced AI Checkers - Working Implementation
 
 // API Configuration for Neural Network AI
-// For deployment, change baseUrl to your Vercel URL:
-// baseUrl: "https://YOUR-APP.vercel.app/api"
+// Automatically detects backend and enables if available
 const API_CONFIG = {
-  enabled: true,
-  // Use localhost for local development, empty string for Vercel deployment (relative path)
-  baseUrl:
-    window.location.hostname === "localhost" ||
-    window.location.protocol === "file:"
-      ? "http://localhost:8000"
-      : "",
+  enabled: false,  // Will be auto-enabled if backend is detected
+  baseUrl: "http://localhost:8000",
   timeout: 5000,
 };
+
+// AUTO-DETECT: Check if backend is available on page load
+(async function initializeAILearning() {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 2000);
+    
+    const response = await fetch(`${API_CONFIG.baseUrl}/api/stats`, {
+      signal: controller.signal,
+      method: 'GET'
+    });
+    
+    clearTimeout(timeoutId);
+    
+    if (response && response.ok) {
+      const data = await response.json();
+      API_CONFIG.enabled = true;
+      console.log('═══════════════════════════════════════');
+      console.log('🧠 AI LEARNING SYSTEM ONLINE');
+      console.log('═══════════════════════════════════════');
+      console.log(`✓ Backend connected`);
+      console.log(`✓ Total games: ${data.total_games || 0}`);
+      console.log(`✓ Move trajectories: ${data.total_trajectories || 0}`);
+      console.log(`✓ Training iterations: ${data.learning_iterations || 0}`);
+      console.log('═══════════════════════════════════════');
+      
+      if (data.total_games > 0 && data.total_trajectories === 0) {
+        console.warn('⚠️  NOTE: Games recorded but no move trajectories.');
+        console.warn('    Frontend needs trajectory tracking for AI to learn.');
+        console.warn('    See: AI_STATS_ISSUE_EXPLAINED.md');
+      }
+    }
+  } catch (error) {
+    API_CONFIG.enabled = false;
+    console.log('═══════════════════════════════════════');
+    console.log('🎮 OFFLINE MODE');
+    console.log('═══════════════════════════════════════');
+    console.log('Backend not detected - using heuristic AI');
+    console.log('');
+    console.log('To enable AI learning:');
+    console.log('  1. Open PowerShell');
+    console.log('  2. Navigate to: docs/');
+    console.log('  3. Run: .\\start_all.ps1');
+    console.log('  4. Refresh this page');
+    console.log('═══════════════════════════════════════');
+  }
+})();
 
 // Service Controller Configuration
 const SERVICE_CONTROLLER_URL = "http://localhost:9000";
@@ -259,7 +300,7 @@ let defensiveMetrics = null;
 let defensiveState = null;
 let cachedFormationState = null;
 
-const PERIODIC_EVAL_INTERVAL = 5;  // Every 5 moves
+const PERIODIC_EVAL_INTERVAL = 1;  // Every 1 move (Continuous monitoring)
 const HEALTH_WARNING_THRESHOLD = 60;
 const HEALTH_CRITICAL_THRESHOLD = 40;
 
@@ -272,7 +313,7 @@ const enhancedAI = {
   baseWeights: {
     // Core values
     material: 1000000, // ABSOLUTE: Pieces are multi-million point assets
-    king: 2500000,    // Kings are priceless
+    king: 20000000,    // Kings are priceless (Increased to ensure > promotion rush)
 
     // Strategic weights - ABSOLUTE DEFENSE
     position: 10,
@@ -280,7 +321,7 @@ const enhancedAI = {
     mobility: 1,
     center: 5,
     advancement: 5, // Near zero: Only advance in absolute vacuum
-    cohesion: 1000,
+    cohesion: 50000, // MASSIVE INCREASE: Groups must stick together like glue
     selfDanger: 10000000, // TOTAL FORBID: Avoid being captured at all cost (including stalemates)
 
     // Tactical weights - DEFENSIVE CAPTURES ONLY
@@ -288,15 +329,15 @@ const enhancedAI = {
     multiCaptureBonus: 2000,
     kingCaptureBonus: 10000,
     safeCaptureBonus: 3000,
-    promotionBonus: 1000, // Low - promotion is not a priority
-    promotionRush: 3000000, 
+    promotionBonus: 5000000, // Increased: Promotion is now a MASSIVE priority
+    promotionRush: 1500000,  // Balanced: High, but less than King value (1.5M * 2.5 = 3.75M max)
     nearPromotionAdvancement: 3000, // NEW: Reward forward movement when close
     threatCreation: 50, // Purely reactive defense
     defensiveValue: 2000,
     kingProtection: 10000, 
     kingExposurePenalty: 50000, 
     tacticalThreatBonus: 1,
-    kingEndangerPenalty: 1000000, 
+    kingEndangerPenalty: 30000000, // EXTREME: Risking a king is worse than losing 30 pawns
 
     // Attack mode weights - BLOCKED
     sacrificeThreshold: 10000000, // Effectively infinite
@@ -309,24 +350,24 @@ const enhancedAI = {
     activityGain: 1,
 
     // Positional weights - MAXIMUM DEFENSIVE FOCUS WITH GAP CLOSURE
-    gapClosure: 5000, 
+    gapClosure: 100000, // SUPREME PRIORITY: Closing gaps is now a primary objective
+    gapClosureBonus: 80000, // HUGE REWARD for each connection made
     support: 5000, 
     edgeSafety: 2000, 
-    isolationPenalty: 50000, 
-    cohesionBonus: 1000,
-    isolationPenaltyFromCohesion: 1000,
-    tightFormationBonus: 5000, 
-    gapClosureBonus: 5000, 
+    isolationPenalty: 100000, // Increased: Being alone is death
+    cohesionBonus: 10000, // Increased: Stick together
+    isolationPenaltyFromCohesion: 10000,
+    tightFormationBonus: 20000, // Increased: Tight formations are mandatory
     supportBonus: 10000, 
-    leavingGapPenalty: 1000000, // ABSOLUTE LOCK
-    fragmentationPenalty: 500000,
-    defensiveLinePenalty: 200000,
-    defensiveHolePenalty: 1000000,
+    leavingGapPenalty: 2000000, // ABSOLUTE LOCK: Never create a gap voluntarily
+    fragmentationPenalty: 1000000, // Breaking the wall is forbidden
+    defensiveLinePenalty: 500000,
+    defensiveHolePenalty: 1500000,
     penetrationRiskPenalty: 50000,
-    followLeaderBonus: 700, // Increased from 400 - follow advanced pieces to close gaps
+    followLeaderBonus: 5000, // Follow the leader to close the gap behind them
     advancementBonus: 20, // Reduced - very cautious advancement
-    fillGapBonus: 900, // Increased from 600 - fill defensive gaps is TOP PRIORITY
-    compactFormationBonus: 800, // Increased from 500 - tight formation is critical
+    fillGapBonus: 50000, // TOP PRIORITY: If you see a hole, fill it immediately
+    compactFormationBonus: 10000, // Compactness is key
     centerControlDirect: 20, // Reduced
     centerControlNear: 10, // Reduced
     centerControlInfluence: 2, // Reduced
@@ -353,10 +394,21 @@ const enhancedAI = {
     learnedLossPattern: 50, // Increased - learn from losses more
 
     // NEW: Defensive weights for comprehensive evaluation
-    formationGap: 10000, 
+    formationGap: 50000, // Filling formation gaps is critical
     backRankLeaving: 1000000, // ABSOLUTE BACK RANK LOCK
     backRankDefense: 100000,
-    holeFilling: 50000,
+    holeFilling: 100000, // Massive bonus for hole filling
+
+    // Dynamic Valuation System Weights
+    stuckPiecePenalty: 50000, // Penalty for having no moves
+    attackZoneBonus: 80000,   // Bonus for rows 7/8 influence
+    backRankDecayRate: 0.4,    // Multiplier for back rank when front line is active
+
+    // Team-Based Advancement (Wall Format)
+    frontLineSolidarityBonus: 20000, 
+    isolationLockdownPenalty: 500000, // Massive penalty for going rogue
+    phalanxAlignmentBonus: 15000, 
+
     openingBackfill: 1000000, 
     lonePiecePenalty: 5000000, // ABSOLUTE NO
     groupSpreadPenalty: 50000, 
@@ -511,69 +563,7 @@ const enhancedAI = {
     return this.evaluatePositionEnhanced(this.getCurrentBoardState(), color);
   },
 
-  evaluatePosition_Legacy(color) {
-    let score = 0;
-    let materialBalance = 0;
 
-    for (let row = 0; row < BOARD_SIZE; row++) {
-      for (let col = 0; col < BOARD_SIZE; col++) {
-        const piece = this.getPieceAt(row, col);
-        if (!piece) continue;
-
-        const isKing = piece.dataset.king === "true";
-        const pieceColor = piece.dataset.color;
-        let pieceValue = isKing ? this.weights.king : this.weights.material;
-
-        // Positional bonuses
-        pieceValue += this.evaluatePosition_single(row, col, piece);
-
-        if (pieceColor === color) {
-          score += pieceValue;
-          materialBalance++;
-        } else {
-          score -= pieceValue;
-          materialBalance--;
-        }
-      }
-    }
-
-    // Add tactical bonuses
-    score += this.evaluateTacticalThreats(color) * 2;
-    score += this.evaluateKingSafety(color);
-    score += this.evaluateMobility(color);
-
-    return score;
-  },
-
-  evaluatePosition_single(row, col, piece) {
-    let posScore = 0;
-    const isKing = piece.dataset.king === "true";
-    const color = piece.dataset.color;
-
-    // Center control
-    const centerDistance =
-      Math.abs(row - (BOARD_SIZE - 1) / 2) +
-      Math.abs(col - (BOARD_SIZE - 1) / 2);
-    posScore += (BOARD_SIZE - 1 - centerDistance) * this.weights.center;
-
-    // Edge safety
-    if (col === 0 || col === BOARD_SIZE - 1) {
-      posScore += this.weights.position;
-    }
-
-    // Advancement for regular pieces
-    if (!isKing) {
-      const advancement = color === "black" ? row : BOARD_SIZE - 1 - row;
-      posScore += advancement * this.weights.advancement;
-    }
-
-    // King positioning
-    if (isKing) {
-      posScore += this.weights.position * 2;
-    }
-
-    return posScore;
-  },
 
   evaluateTacticalThreats(color) {
     let threats = 0;
@@ -3384,70 +3374,70 @@ const enhancedAI = {
     return false;
   },
 
-  // NEW: Evaluate if this move fills a gap left by an advanced piece
+  /**
+   * Evaluate if this move fills a gap left by an advanced friendly piece.
+   * Promotes formation integrity by encouraging backfilling.
+   * 
+   * @param {Object} move - The move object
+   * @returns {number} The gap-filling bonus
+   */
   evaluateGapFilling(move) {
     let fillScore = 0;
-    const toRow = move.toRow;
-    const toCol = move.toCol;
-    const fromRow = move.fromRow;
+    const { toRow, toCol, fromRow } = move;
 
-    // Moving forward is good
-    const isMovingForward = toRow > fromRow;
+    // We only care about forward advancement for gap filling
+    if (toRow <= fromRow) return 0;
 
-    if (isMovingForward) {
-      // Check if there are friendly pieces ahead of us (we're following them)
-      const checkAhead = [
-        [1, -1],
-        [1, 0],
-        [1, 1],
-        [2, -1],
-        [2, 0],
-        [2, 1],
-      ];
+    // Check for friendly pieces ahead of the destination
+    const searchOffsets = [
+      [1, -1], [1, 0], [1, 1],
+      [2, -1], [2, 0], [2, 1],
+    ];
 
-      let piecesAhead = 0;
-      for (const [dRow, dCol] of checkAhead) {
-        const checkRow = toRow + dRow;
-        const checkCol = toCol + dCol;
-        if (
-          checkRow >= 0 &&
-          checkRow < BOARD_SIZE &&
-          checkCol >= 0 &&
-          checkCol < BOARD_SIZE
-        ) {
-          const piece = this.getPieceAt(checkRow, checkCol);
-          if (piece && piece.dataset.color === "black") {
-            piecesAhead++;
-          }
+    let alliesAheadCount = 0;
+    for (const [rowOffset, colOffset] of searchOffsets) {
+      const checkRow = toRow + rowOffset;
+      const checkCol = toCol + colOffset;
+      
+      if (
+        checkRow >= 0 && checkRow < BOARD_SIZE &&
+        checkCol >= 0 && checkCol < BOARD_SIZE
+      ) {
+        const pieceAtPos = this.getPieceAt(checkRow, checkCol);
+        if (pieceAtPos && pieceAtPos.dataset.color === "black") {
+          alliesAheadCount++;
         }
       }
+    }
 
-      // If there are pieces ahead, we're filling the gap - GOOD!
-      if (piecesAhead > 0) {
-        fillScore += this.weights.fillGapBonus;
+    // If there are allies ahead, this move likely fills a gap or provides support
+    if (alliesAheadCount > 0) {
+      fillScore += this.weights.fillGapBonus;
 
-        // Extra bonus if we're maintaining a tight line
-        if (piecesAhead >= 2) {
-          fillScore += this.weights.compactFormationBonus;
-        }
+      // Extra bonus for maintaining a tight, supporting formation
+      if (alliesAheadCount >= 2) {
+        fillScore += this.weights.compactFormationBonus;
       }
     }
 
     return fillScore;
   },
 
-  // NEW: Reward following advanced pieces
+  /**
+   * Reward following advanced friendly pieces to maintain group cohesion.
+   * 
+   * @param {Object} move - The move object
+   * @returns {number} The follow-leader bonus
+   */
   evaluateFollowLeader(move) {
     let followScore = 0;
-    const toRow = move.toRow;
-    const toCol = move.toCol;
-    const fromRow = move.fromRow;
+    const { toRow, fromRow } = move;
 
-    // Check if we're moving forward
-    if (toRow <= fromRow) return 0; // Not advancing
+    // Only reward forward advancement
+    if (toRow <= fromRow) return 0;
 
-    // Find the most advanced friendly piece
-    let mostAdvancedRow = -1;
+    // Find the current "phalanx leader" (most advanced friendly pawn)
+    let leadRow = -1;
     for (let row = BOARD_SIZE - 1; row >= 0; row--) {
       for (let col = 0; col < BOARD_SIZE; col++) {
         const piece = this.getPieceAt(row, col);
@@ -3456,25 +3446,24 @@ const enhancedAI = {
           piece.dataset.color === "black" &&
           piece.dataset.king !== "true"
         ) {
-          if (row > mostAdvancedRow) {
-            mostAdvancedRow = row;
+          if (row > leadRow) {
+            leadRow = row;
           }
         }
       }
     }
 
-    // If we're moving closer to the most advanced piece's row, reward it
-    if (mostAdvancedRow > 0) {
-      const currentDistanceToLeader = Math.abs(fromRow - mostAdvancedRow);
-      const newDistanceToLeader = Math.abs(toRow - mostAdvancedRow);
+    if (leadRow > 0) {
+      const currentDist = Math.abs(fromRow - leadRow);
+      const newDist = Math.abs(toRow - leadRow);
 
-      // Reward getting closer to the leader
-      if (newDistanceToLeader < currentDistanceToLeader) {
+      // Reward reducing distance to the group leader
+      if (newDist < currentDist) {
         followScore += this.weights.followLeaderBonus;
       }
 
-      // Extra bonus if we're in the same row or 1 row behind the leader
-      if (Math.abs(toRow - mostAdvancedRow) <= 1) {
+      // Extra bonus if we align with or stay within one row of the leader
+      if (Math.abs(toRow - leadRow) <= 1) {
         followScore += this.weights.advancementBonus;
       }
     }
@@ -3482,65 +3471,75 @@ const enhancedAI = {
     return followScore;
   },
 
-  // NEW: Reward keeping formation compact while advancing
+  /**
+   * Reward maintaining a compact formation while advancing.
+   * Pieces in a 3-row band provide maximum defensive solidity.
+   * 
+   * @param {Object} move - The move object
+   * @returns {number} The compactness score
+   */
   evaluateCompactAdvancement(move) {
     let compactScore = 0;
-    const toRow = move.toRow;
-    const toCol = move.toCol;
+    const targetRow = move.toRow;
 
-    // Count friendly pieces in the same and adjacent rows
-    let piecesInFormation = 0;
+    // Count allies in the target row and adjacent rows to evaluate local density
+    let alliesInFormationCount = 0;
     for (let col = 0; col < BOARD_SIZE; col++) {
-      // Check same row
-      const samePiece = this.getPieceAt(toRow, col);
-      if (samePiece && samePiece.dataset.color === "black") {
-        piecesInFormation++;
+      // Current target row
+      const sameRowPiece = this.getPieceAt(targetRow, col);
+      if (sameRowPiece && sameRowPiece.dataset.color === "black") {
+        alliesInFormationCount++;
       }
 
-      // Check row behind
-      if (toRow - 1 >= 0) {
-        const behindPiece = this.getPieceAt(toRow - 1, col);
+      // Row behind
+      if (targetRow - 1 >= 0) {
+        const behindPiece = this.getPieceAt(targetRow - 1, col);
         if (behindPiece && behindPiece.dataset.color === "black") {
-          piecesInFormation++;
+          alliesInFormationCount++;
         }
       }
 
-      // Check row ahead
-      if (toRow + 1 < BOARD_SIZE) {
-        const aheadPiece = this.getPieceAt(toRow + 1, col);
+      // Row ahead
+      if (targetRow + 1 < BOARD_SIZE) {
+        const aheadPiece = this.getPieceAt(targetRow + 1, col);
         if (aheadPiece && aheadPiece.dataset.color === "black") {
-          piecesInFormation++;
+          alliesInFormationCount++;
         }
       }
     }
 
-    // Reward having many pieces in formation (3-row band)
-    if (piecesInFormation >= 6) {
+    // Large bonus for belonging to a dense 'phalanx' (6+ pieces in a 3-row band)
+    if (alliesInFormationCount >= 6) {
       compactScore += this.weights.compactFormationBonus;
-    } else if (piecesInFormation >= 4) {
+    } else if (alliesInFormationCount >= 4) {
       compactScore += this.weights.compactFormationBonus * 0.5;
     }
 
     return compactScore;
   },
 
+  /**
+   * Evaluate control of the central squares.
+   * Central squares are (4,4), (4,5), (5,4), and (5,5) on a 10x10 board.
+   * 
+   * @param {Object} move - The move object
+   * @returns {number} The center control score
+   */
   evaluateCenterControl(move) {
     const centerSquares = [
-      [4, 4],
-      [4, 5],
-      [5, 4],
-      [5, 5],
+      [4, 4], [4, 5], [5, 4], [5, 5],
     ];
     let centerScore = 0;
+    const { toRow: targetRow, toCol: targetCol } = move;
 
     for (const [centerRow, centerCol] of centerSquares) {
-      const distance =
-        Math.abs(move.toRow - centerRow) + Math.abs(move.toCol - centerCol);
-      if (distance === 0) {
+      const manhattanDistance = Math.abs(targetRow - centerRow) + Math.abs(targetCol - centerCol);
+      
+      if (manhattanDistance === 0) {
         centerScore += this.weights.centerControlDirect;
-      } else if (distance === 1) {
+      } else if (manhattanDistance === 1) {
         centerScore += this.weights.centerControlNear;
-      } else if (distance === 2) {
+      } else if (manhattanDistance === 2) {
         centerScore += this.weights.centerControlInfluence;
       }
     }
@@ -3548,125 +3547,132 @@ const enhancedAI = {
     return centerScore;
   },
 
+  /**
+   * Evaluate the activity and mobility of a king.
+   * Kings should be mobile and placed where they can threaten the opponent.
+   * 
+   * @param {Object} move - The move object
+   * @returns {number} The king activity score
+   */
   evaluateKingActivity(move) {
+    if (move.piece.dataset.king !== "true") return 0;
+
     let activityScore = 0;
+    const { toRow: targetRow, toCol: targetCol } = move;
 
-    if (move.piece.dataset.king === "true") {
-      // Kings should be active and mobile
-      const mobility = this.countKingMoves(move.toRow, move.toCol);
-      activityScore += mobility * this.weights.kingActivity;
+    // Kings should be mobile: encourage moves to squares with high mobility
+    const mobilityCount = this.countKingMoves(targetRow, targetCol);
+    activityScore += mobilityCount * this.weights.kingActivity;
 
-      // Kings should participate in the game
-      const opponentThreats = this.countOpponentThreatsFromPosition(
-        move.toRow,
-        move.toCol
-      );
-      activityScore += opponentThreats * this.weights.kingThreatBonus;
-    }
+    // Kings should participate: reward placement that threatens opponent pieces
+    const opponentThreatCount = this.countOpponentThreatsFromPosition(targetRow, targetCol);
+    activityScore += opponentThreatCount * this.weights.kingThreatBonus;
 
     return activityScore;
   },
 
+  /**
+   * Evaluate occupation of key strategic squares (corners and important diagonals).
+   * 
+   * @param {Object} move - The move object
+   * @returns {number} The key square control score
+   */
   evaluateKeySquareControl(move) {
-    let keySquareScore = 0;
-
-    // Key squares are those that control important diagonals
     const keySquares = [
-      [1, 1],
-      [1, BOARD_SIZE - 2],
-      [BOARD_SIZE - 2, 1],
-      [BOARD_SIZE - 2, BOARD_SIZE - 2],
-      [2, 2],
-      [2, BOARD_SIZE - 3],
-      [BOARD_SIZE - 3, 2],
-      [BOARD_SIZE - 3, BOARD_SIZE - 3],
+      [1, 1], [1, BOARD_SIZE - 2],
+      [BOARD_SIZE - 2, 1], [BOARD_SIZE - 2, BOARD_SIZE - 2],
+      [2, 2], [2, BOARD_SIZE - 3],
+      [BOARD_SIZE - 3, 2], [BOARD_SIZE - 3, BOARD_SIZE - 3],
     ];
 
+    const { toRow: targetRow, toCol: targetCol } = move;
     for (const [keyRow, keyCol] of keySquares) {
-      if (move.toRow === keyRow && move.toCol === keyCol) {
-        keySquareScore += this.weights.keySquareControl;
+      if (targetRow === keyRow && targetCol === keyCol) {
+        return this.weights.keySquareControl;
       }
     }
 
-    return keySquareScore;
+    return 0;
   },
 
+  /**
+   * Evaluate the 'tempo' or initiative gain of a move.
+   * Captures and forward advancement contribute to tempo.
+   * 
+   * @param {Object} move - The move object
+   * @returns {number} The tempo score
+   */
   evaluateTempo(move) {
     let tempoScore = 0;
 
-    // Tempo is about maintaining initiative
+    // Captures grant massive initiative (tempo)
     if (move.isCapture) {
       tempoScore += this.weights.tempoCaptureBonus;
     }
 
-    // Moving forward maintains tempo for regular pieces
+    // Forward advancement of regular pieces maintains pressure
     if (move.piece.dataset.king !== "true") {
-      const advancement =
-        move.piece.dataset.color === "black"
-          ? move.toRow - move.fromRow
-          : move.fromRow - move.toRow;
-      if (advancement > 0) {
-        tempoScore += advancement * this.weights.tempo;
+      const advancementMagnitude = move.piece.dataset.color === "black"
+        ? (move.toRow - move.fromRow)
+        : (move.fromRow - move.toRow);
+
+      if (advancementMagnitude > 0) {
+        tempoScore += advancementMagnitude * this.weights.tempo;
       }
     }
 
     return tempoScore;
   },
 
+  /**
+   * Evaluate the strategic value of occupying side squares.
+   * Side squares are safer as they have fewer attack vectors from opponents.
+   * 
+   * @param {Object} move - The move object
+   * @returns {number} The side occupation score
+   */
   evaluateSideOccupation(move) {
     let sideScore = 0;
+    const { toRow: targetRow, toCol: targetCol } = move;
 
-    // Define side positions (all perimeter squares on dark squares)
-    // Side squares are safer because they limit opponent attack angles
-    // Dynamically calculate based on current BOARD_SIZE
+    // Generate valid dark squares on the board perimeter
     const sideSquares = [];
     const size = BOARD_SIZE || 10;
 
-    // Top and Bottom edges
     for (let c = 0; c < size; c++) {
-      if ((0 + c) % 2 !== 0) sideSquares.push([0, c]);
-      if ((size - 1 + c) % 2 !== 0) sideSquares.push([size - 1, c]);
+      if ((0 + c) % 2 !== 0) sideSquares.push([0, c]); // Top edge
+      if ((size - 1 + c) % 2 !== 0) sideSquares.push([size - 1, c]); // Bottom edge
     }
-    // Left and Right edges
     for (let r = 1; r < size - 1; r++) {
-      if ((r + 0) % 2 !== 0) sideSquares.push([r, 0]);
-      if ((r + (size - 1)) % 2 !== 0) sideSquares.push([r, size - 1]);
+      if ((r + 0) % 2 !== 0) sideSquares.push([r, 0]); // Left edge
+      if ((r + (size - 1)) % 2 !== 0) sideSquares.push([r, size - 1]); // Right edge
     }
 
-    const isSide = sideSquares.some(
-      ([r, c]) => r === move.toRow && c === move.toCol
-    );
-
-    if (isSide) {
+    const isLandingOnSide = sideSquares.some(([r, c]) => r === targetRow && c === targetCol);
+    if (isLandingOnSide) {
       sideScore += this.weights.sideOccupation;
     }
 
-    // Bonus for moves that get close to available side squares
-    const availableSides = sideSquares.filter(([r, c]) => {
-      const piece = this.getPieceAt(r, c);
-      return !piece; // Side square is empty/available
-    });
+    // Bonus for moving towards unoccupied side squares
+    const availableSides = sideSquares.filter(([r, c]) => !this.getPieceAt(r, c));
 
-    if (availableSides.length > 0 && !isSide) {
-      // Find the closest available side square
-      let minDistance = Infinity;
+    if (availableSides.length > 0 && !isLandingOnSide) {
+      let minDistanceToSide = Infinity;
       for (const [sideRow, sideCol] of availableSides) {
-        const distance =
-          Math.abs(move.toRow - sideRow) + Math.abs(move.toCol - sideCol);
-        minDistance = Math.min(minDistance, distance);
+        const manhattanDist = Math.abs(targetRow - sideRow) + Math.abs(targetCol - sideCol);
+        if (manhattanDist < minDistanceToSide) {
+          minDistanceToSide = manhattanDist;
+        }
       }
 
-      // Bonus for getting closer to side squares when they're available
-      if (minDistance <= 2) {
-        const proximityBonus =
-          (this.weights.sideProximity * (3 - minDistance)) / 3;
-        sideScore += proximityBonus;
+      // Proximity bonus: higher reward for being closer to a side square
+      if (minDistanceToSide <= 2) {
+        const proximityWeight = (3 - minDistanceToSide) / 3;
+        sideScore += this.weights.sideProximity * proximityWeight;
       }
 
-      // Extra bonus when side squares are available but not occupied
-      if (availableSides.length > 0) {
-        sideScore += this.weights.sideAvailable / availableSides.length;
-      }
+      // Systemic bonus for the general availability of safe side options
+      sideScore += this.weights.sideAvailable / availableSides.length;
     }
 
     return sideScore;
@@ -3674,295 +3680,401 @@ const enhancedAI = {
 
   // HELPER FUNCTIONS - Missing implementations
 
+  /**
+   * Helper: Check if a piece at (row, col) is under capture threat.
+   * 
+   * @param {number} row - Row index
+   * @param {number} col - Column index
+   * @returns {boolean} True if the piece is threatened
+   */
   isPieceUnderThreat(row, col) {
     const piece = this.getPieceAt(row, col);
-    if (!piece) return false;
-    return this.willBeUnderThreat(row, col, piece);
+    return piece ? this.willBeUnderThreat(row, col, piece) : false;
   },
 
+  /**
+   * Calculate the number of legal non-capture moves available to a king from a position.
+   * 
+   * @param {number} row - King row
+   * @param {number} col - King column
+   * @returns {number} The number of available moves
+   */
   countKingMoves(row, col) {
     let moveCount = 0;
-    const directions = [
-      [-1, -1],
-      [-1, 1],
-      [1, -1],
-      [1, 1],
-    ];
+    const directions = [[-1, -1], [-1, 1], [1, -1], [1, 1]];
 
-    for (const [dRow, dCol] of directions) {
-      for (let distance = 1; distance < BOARD_SIZE; distance++) {
-        const newRow = row + dRow * distance;
-        const newCol = col + dCol * distance;
+    for (const [deltaRow, deltaCol] of directions) {
+      for (let dist = 1; dist < BOARD_SIZE; dist++) {
+        const nextRow = row + deltaRow * dist;
+        const nextCol = col + deltaCol * dist;
         if (
-          newRow < 0 ||
-          newRow >= BOARD_SIZE ||
-          newCol < 0 ||
-          newCol >= BOARD_SIZE
-        )
-          break;
-        if (this.getPieceAt(newRow, newCol)) break;
+          nextRow < 0 || nextRow >= BOARD_SIZE ||
+          nextCol < 0 || nextCol >= BOARD_SIZE
+        ) break;
+        
+        if (this.getPieceAt(nextRow, nextCol)) break; // Blocked
         moveCount++;
       }
     }
     return moveCount;
   },
 
+  /**
+   * Count how many immediate capture threats an opponent has from a specific position.
+   * 
+   * @param {number} row - Row index
+   * @param {number} col - Column index
+   * @returns {number} The count of potential opponent captures
+   */
   countOpponentThreatsFromPosition(row, col) {
-    let threats = 0;
-    const directions = [
-      [-1, -1],
-      [-1, 1],
-      [1, -1],
-      [1, 1],
-    ];
+    let threatsCount = 0;
+    const directions = [[-1, -1], [-1, 1], [1, -1], [1, 1]];
 
-    for (const [dRow, dCol] of directions) {
-      const jumpRow = row + dRow * 2;
-      const jumpCol = col + dCol * 2;
+    for (const [deltaRow, deltaCol] of directions) {
+      const landingRow = row + deltaRow * 2;
+      const landingCol = col + deltaCol * 2;
 
       if (
-        jumpRow >= 0 &&
-        jumpRow < BOARD_SIZE &&
-        jumpCol >= 0 &&
-        jumpCol < BOARD_SIZE
+        landingRow >= 0 && landingRow < BOARD_SIZE &&
+        landingCol >= 0 && landingCol < BOARD_SIZE
       ) {
-        const middleRow = row + dRow;
-        const middleCol = col + dCol;
-        const middlePiece = this.getPieceAt(middleRow, middleCol);
-        const landSquare = this.getPieceAt(jumpRow, jumpCol);
+        const targetRow = row + deltaRow;
+        const targetCol = col + deltaCol;
+        const middlePiece = this.getPieceAt(targetRow, targetCol);
+        const landingPiece = this.getPieceAt(landingRow, landingCol);
 
-        if (middlePiece && middlePiece.dataset.color === "red" && !landSquare) {
-          threats++;
+        // Treat 'red' as the opponent for threat evaluation
+        if (middlePiece && middlePiece.dataset.color === "red" && !landingPiece) {
+          threatsCount++;
         }
       }
     }
-    return threats;
+    return threatsCount;
   },
 
+  /**
+   * Calculate potential opponent capture opportunities after our move.
+   * Redirects to the enhanced `calculateOpponentCaptureOpportunities`.
+   * 
+   * @param {Object} move - The move object
+   * @returns {number} The count of opponent captures
+   */
   countOpponentThreatsAfterMove(move) {
-    // Enhanced: Calculate actual opponent threats after this move
     return this.calculateOpponentCaptureOpportunities(move);
   },
 
-  // NEW: Enhanced attack mode evaluation system
+  /**
+   * Enhanced attack mode evaluation system.
+   * Aggregates sacrificial analysis, exchange value, and tactical pressure.
+   * 
+   * @param {Object} move - The move object
+   * @returns {number} The total attack mode score
+   */
   evaluateAttackMode(move) {
-    let attackScore = 0;
+    let totalAttackScore = 0;
 
-    // 1. SACRIFICIAL ATTACK EVALUATION - CRITICAL SAFETY CHECK
-    const sacrificeAnalysis = this.evaluateSacrificalAttack(move);
-    attackScore += sacrificeAnalysis.score;
+    // 1. Evaluate if this is a sacrificial attack and check its profitability
+    const sacrificeResult = this.evaluateSacrificalAttack(move);
+    totalAttackScore += sacrificeResult.score;
 
-    // ENHANCED LOGGING for sacrifice detection
-    if (sacrificeAnalysis.isSacrifice) {
-    }
+    // 2. Evaluate piece exchange value (trading pieces)
+    totalAttackScore += this.evaluateExchange(move);
 
-    // 2. EXCHANGE EVALUATION
-    const exchangeValue = this.evaluateExchange(move);
-    attackScore += exchangeValue;
+    // 3. Evaluate prevention of opponent capture chains
+    totalAttackScore += this.evaluateOpponentCaptureChainPrevention(move);
 
-    // 3. PREVENT OPPONENT CONTINUOUS CAPTURE
-    const chainPrevention = this.evaluateOpponentCaptureChainPrevention(move);
-    attackScore += chainPrevention;
+    // 4. Evaluate creation of tactical pressure on the opponent
+    totalAttackScore += this.evaluateTacticalPressure(move);
 
-    // 4. TACTICAL PRESSURE CREATION
-    const pressureValue = this.evaluateTacticalPressure(move);
-    attackScore += pressureValue;
-
-    if (Math.abs(attackScore) > 50) {
-      if (sacrificeAnalysis.isSacrifice) {
-      }
-    }
-
-    return attackScore;
+    return totalAttackScore;
   },
 
-  // NEW: Evaluate sacrificial attacks (max 1 piece sacrifice for good reason)
+  /**
+   * Evaluate sacrificial attacks where we intentionally lose a piece for gain.
+   * Follows strict rules to ensure sacrifices translate to a net material or strategic win.
+   * 
+   * @param {Object} move - The move object
+   * @returns {Object} An object containing the score and sacrifice metadata
+   */
   evaluateSacrificalAttack(move) {
-    const result = {
+    const analysis = {
       score: 0,
       isSacrifice: false,
-      description: "",
+      reasoning: "",
     };
 
-    if (!move.isCapture) return result;
+    if (!move.isCapture) return analysis;
 
-    // Simulate the move and check if we lose a piece
-    const willBeCaptured = this.willBeUnderThreat(
-      move.toRow,
-      move.toCol,
-      move.piece
-    );
+    // Determine if the destination square is under immediate threat after landing
+    const isLosingPiece = this.willBeUnderThreat(move.toRow, move.toCol, move.piece);
 
-    if (willBeCaptured) {
-      result.isSacrifice = true;
+    if (isLosingPiece) {
+      analysis.isSacrifice = true;
 
-      // Calculate what we gain vs what we lose
-      const captureGain = this.getTotalCaptureCount(move);
-      const sacrificeLoss = move.piece.dataset.king === "true" ? 3 : 1; // King worth 3, regular worth 1
+      const captureGainCount = this.getTotalCaptureCount(move);
+      const pieceValueLoss = move.piece.dataset.king === "true" ? 3 : 1;
+      const followUpGainCount = this.calculateSacrificeFollowUp(move);
 
-      // Calculate follow-up opportunities after sacrifice
-      const followUpOpportunities = this.calculateSacrificeFollowUp(move);
+      // Profitability: we must gain more pieces than we lose
+      const netMaterialGain = captureGainCount + followUpGainCount - pieceValueLoss;
 
-      // STRICT RULE: Only allow sacrifices that gain more than they lose
-      const netGain = captureGain + followUpOpportunities - sacrificeLoss;
-
-      if (netGain > 0) {
-        // Good sacrifice - we gain more than we lose
-        result.score = netGain * 200; // Bonus for profitable sacrifice
-        result.description = `Profitable sacrifice: Gain ${
-          captureGain + followUpOpportunities
-        }, Lose ${sacrificeLoss}`;
-      } else if (netGain === 0) {
-        // Equal exchange - might be acceptable in certain positions
-        const positionalBenefit =
-          this.evaluatePositionalBenefitOfSacrifice(move);
-        if (positionalBenefit > 100) {
-          result.score = positionalBenefit * 0.5; // Reduced bonus for positional sacrifice
-          result.description = `Equal exchange with positional benefit`;
+      if (netMaterialGain > 0) {
+        // Profitable sacrifice: Reward the gain
+        analysis.score = netMaterialGain * 200;
+        analysis.reasoning = `Profitable sacrifice: Gain ${captureGainCount + followUpGainCount}, Lose ${pieceValueLoss}`;
+      } else if (netMaterialGain === 0) {
+        // Equal exchange: Only reward if there's a strong positional justification
+        const positionalValue = this.evaluatePositionalBenefitOfSacrifice(move);
+        if (positionalValue > 100) {
+          analysis.score = positionalValue * 0.5;
+          analysis.reasoning = `Neutral exchange justified by positional benefit`;
         } else {
-          result.score = -1000; // HEAVY penalty for neutral sacrifice without benefit (increased from -300)
-          result.description = `Neutral sacrifice avoided - no strategic benefit`;
+          analysis.score = -1000;
+          analysis.reasoning = `Neutral exchange rejected (insufficient positional gain)`;
         }
       } else {
-        // Bad sacrifice - we lose more than we gain
-        result.score = -2000; // MASSIVE penalty for bad sacrifice (increased from -800)
-        result.description = `BAD SACRIFICE BLOCKED: Lose ${sacrificeLoss}, Gain ${
-          captureGain + followUpOpportunities
-        }`;
+        // Unprofitable sacrifice: Apply heavy penalty
+        analysis.score = -2000;
+        analysis.reasoning = `Bad sacrifice blocked: Lose ${pieceValueLoss}, Gain ${captureGainCount + followUpGainCount}`;
       }
     }
 
-    return result;
+    return analysis;
   },
 
-  // NEW: Calculate follow-up opportunities after a sacrifice
+  /**
+   * Calculate potential follow-up capture opportunities after a sacrifice.
+   * 
+   * @param {Object} move - The move object
+   * @returns {number} The count of potential follow-up captures
+   */
   calculateSacrificeFollowUp(move) {
-    let followUpValue = 0;
+    let followUpCount = 0;
 
-    // Simulate the sacrifice move
+    // Simulate the board state after the complete attack sequence
     const simulatedBoard = this.simulateCompleteAttack(move);
 
-    // Check what capture opportunities this creates for our other pieces
+    // Scan the board for new capture opportunities for other friendly pieces
     for (let row = 0; row < BOARD_SIZE; row++) {
       for (let col = 0; col < BOARD_SIZE; col++) {
         const piece = this.getPieceAtOnBoard(simulatedBoard, row, col);
+        
+        // Count opportunities for pieces that are NOT the one we just moved
         if (
           piece &&
           piece.color === "black" &&
           !(row === move.toRow && col === move.toCol)
         ) {
-          // Not the sacrificed piece
-
-          const captureOpportunities = this.findCaptureOpportunitiesOnBoard(
+          const opportunities = this.findCaptureOpportunitiesOnBoard(
             simulatedBoard,
             row,
             col,
             piece
           );
-          followUpValue += captureOpportunities.length;
+          followUpCount += opportunities.length;
         }
       }
     }
 
-    return followUpValue;
+    return followUpCount;
   },
 
-  // NEW: Evaluate positional benefits of sacrifice (promotion, king activation, etc.)
+  /**
+   * Evaluate the strategic and positional benefits of a sacrifice move.
+   * Benefits include promotion paths, king activation, and formation damage.
+   * 
+   * @param {Object} move - The move object
+   * @returns {number} The positional benefit score
+   */
   evaluatePositionalBenefitOfSacrifice(move) {
-    let benefit = 0;
+    let totalBenefitScore = 0;
 
-    // Check if sacrifice opens path to promotion
+    // 1. Reward moves that open a concrete path to promotion
     if (this.enablesPromotion(move)) {
-      benefit += 150; // Promotion path value
+      totalBenefitScore += 150;
     }
 
-    // Check if sacrifice activates our kings
-    const kingActivation = this.calculateKingActivationBenefit(move);
-    benefit += kingActivation;
+    // 2. Reward moves that improve the mobility or positioning of our kings
+    totalBenefitScore += this.calculateKingActivationBenefit(move);
 
-    // Check if sacrifice breaks opponent formation
-    const formationDamage = this.calculateOpponentFormationDamage(move);
-    benefit += formationDamage;
+    // 3. Reward moves that break or weaken the opponent's defensive formation
+    totalBenefitScore += this.calculateOpponentFormationDamage(move);
 
-    return benefit;
+    return totalBenefitScore;
   },
 
-  // NEW: Evaluate piece exchanges (trading pieces)
+  /**
+   * Evaluate a piece exchange (trading pieces).
+   * 
+   * @param {Object} move - The move object
+   * @returns {number} The net exchange score
+   */
   evaluateExchange(move) {
     if (!move.isCapture) return 0;
 
     let exchangeScore = 0;
-    const capturedPieceValue = this.calculatePieceValue(move);
+    const capturedValue = this.calculatePieceValue(move);
 
-    // Check if our piece will be recaptured
-    const willBeRecaptured = this.willBeUnderThreat(
+    // Check if our piece will be recaptured immediately after our turn
+    const isRecapturable = this.willBeUnderThreat(
       move.toRow,
       move.toCol,
       move.piece
     );
 
-    if (willBeRecaptured) {
-      const ourPieceValue = move.piece.dataset.king === "true" ? 300 : 100;
-      const netExchange = capturedPieceValue - ourPieceValue;
+    if (isRecapturable) {
+      const ourValue = move.piece.dataset.king === "true" ? 300 : 100;
+      const netValue = capturedValue - ourValue;
 
-      if (netExchange > 0) {
-        exchangeScore += netExchange; // Favorable exchange
-      } else if (netExchange < 0) {
-        exchangeScore += netExchange * 2; // Penalize unfavorable exchanges more
+      if (netValue > 0) {
+        exchangeScore += netValue; // Profitable trade
+      } else if (netValue < 0) {
+        exchangeScore += netValue * 2; // Penalize bad trades heavily
       }
     } else {
-      // Free capture - no exchange
-      exchangeScore += capturedPieceValue;
+      // Free capture (net gain)
+      exchangeScore += capturedValue;
     }
 
     return exchangeScore;
   },
 
-  // NEW: Prevent creating opponent continuous capture opportunities
+  /**
+   * Evaluate and penalize moves that enable opponent multi-capture chains.
+   * Also rewards neutralizing existing opponent threats.
+   * 
+   * @param {Object} move - The move object
+   * @returns {number} The prevention score
+   */
   evaluateOpponentCaptureChainPrevention(move) {
     let preventionScore = 0;
 
-    // Check if this move creates a capture chain for opponent
-    const captureChainLength =
-      this.calculateOpponentCaptureChainAfterMove(move);
+    // Detect the longest capture chain enabled for the opponent after this move
+    const maxOpponentChainLength = this.calculateOpponentCaptureChainAfterMove(move);
 
-    if (captureChainLength > 1) {
-      // Heavy penalty for enabling opponent multi-captures
-      preventionScore -= captureChainLength * 400;
-    } else if (captureChainLength === 1) {
-      // Moderate penalty for enabling single capture
+    if (maxOpponentChainLength > 1) {
+      // Severe penalty for allowing multi-captures (chain length 2+)
+      preventionScore -= maxOpponentChainLength * 400;
+    } else if (maxOpponentChainLength === 1) {
+      // Moderate penalty for allowing even a single capture
       preventionScore -= 150;
     }
 
-    // Bonus for moves that break existing opponent threats
-    const threatsNeutralized = this.calculateThreatsNeutralized(move);
-    if (threatsNeutralized > 0) {
-      preventionScore += threatsNeutralized * 120;
+    // Reward moves that neutralize existing threats against us
+    const neutralizedThreatsCount = this.calculateThreatsNeutralized(move);
+    if (neutralizedThreatsCount > 0) {
+      preventionScore += neutralizedThreatsCount * 120;
     }
 
     return preventionScore;
   },
 
-  // NEW: Calculate how many pieces opponent can capture in a chain after our move
+  /**
+   * Calculate the maximum capture chain length available to the opponent after our move.
+   * 
+   * @param {Object} move - The move object
+   * @returns {number} The maximum opponent chain length
+   */
   calculateOpponentCaptureChainAfterMove(move) {
-    // Simulate our move
     const simulatedBoard = this.simulateMove(move);
+    let globalMaxChainLength = 0;
 
-    let maxChainLength = 0;
-
-    // Check all opponent pieces for capture chains
+    // Evaluate capture sequences for every opponent piece on the simulated board
     for (let row = 0; row < BOARD_SIZE; row++) {
       for (let col = 0; col < BOARD_SIZE; col++) {
-        const piece = this.getPieceAtOnBoard(simulatedBoard, row, col);
-        if (piece && piece.color === "red") {
-          const chainLength = this.calculateMaxCaptureChain(
-            simulatedBoard,
-            row,
-            col,
-            piece,
-            []
+        const pieceAtPos = this.getPieceAtOnBoard(simulatedBoard, row, col);
+        
+        // Opponent is 'red'
+        if (pieceAtPos && pieceAtPos.color === "red") {
+          const pieceMaxChain = this.calculateMaxCaptureChain(
+            simulatedBoard, row, col, pieceAtPos, []
           );
-          maxChainLength = Math.max(maxChainLength, chainLength);
+          globalMaxChainLength = Math.max(globalMaxChainLength, pieceMaxChain);
+        }
+      }
+    }
+
+    return globalMaxChainLength;
+  },
+
+  /**
+   * Recursively calculate the maximum possible capture chain length from a position.
+   * Strictly enforces the "no 180-degree backtracking" rule.
+   * 
+   * @param {Array} board - 10x10 board array
+   * @param {number} rowIdx - Starting row
+   * @param {number} colIdx - Starting column
+   * @param {Object} pieceObj - The piece performing captures
+   * @param {Array} capturedKeysList - List of "row,col" keys already captured in this chain
+   * @param {Array} prevDirection - The [dR, dC] used to reach current square
+   * @returns {number} Maximum chain length
+   */
+  calculateMaxCaptureChain(board, rowIdx, colIdx, pieceObj, capturedKeysList, prevDirection = null) {
+    const tacticalDirections = [[-1, -1], [-1, 1], [1, -1], [1, 1]];
+    let maxChainLength = 0;
+    const isKingPiece = pieceObj.king === true;
+    const opponentColorVal = pieceObj.color === "red" ? "black" : "red";
+
+    for (const [deltaRow, deltaCol] of tacticalDirections) {
+      // RULE: No 180-degree backtracking in a single sequence
+      if (prevDirection && deltaRow === -prevDirection[0] && deltaCol === -prevDirection[1]) continue;
+
+      if (isKingPiece) {
+        // Flying King logic: scan diagonal for victims
+        for (let distIdx = 1; distIdx < BOARD_SIZE; distIdx++) {
+          const targetRowIdx = rowIdx + deltaRow * distIdx;
+          const targetColIdx = colIdx + deltaCol * distIdx;
+
+          if (targetRowIdx < 0 || targetRowIdx >= BOARD_SIZE || targetColIdx < 0 || targetColIdx >= BOARD_SIZE) break;
+
+          const potentialVictim = this.getPieceAtOnBoard(board, targetRowIdx, targetColIdx);
+          if (potentialVictim) {
+            if (potentialVictim.color === opponentColorVal) {
+              const victimKeyStr = `${targetRowIdx},${targetColIdx}`;
+              if (!capturedKeysList.includes(victimKeyStr)) {
+                // Found a victim. Check landing squares after it.
+                for (let landDistanceStep = 1; landDistanceStep < BOARD_SIZE; landDistanceStep++) {
+                  const landingRowIdx = targetRowIdx + deltaRow * landDistanceStep;
+                  const landingColIdx = targetColIdx + deltaCol * landDistanceStep;
+
+                  if (landingRowIdx < 0 || landingRowIdx >= BOARD_SIZE || landingColIdx < 0 || landingColIdx >= BOARD_SIZE) break;
+                  if (this.getPieceAtOnBoard(board, landingRowIdx, landingColIdx)) break; // Blocked
+
+                  // Recursively check from this landing spot, passing current direction
+                  const chainVal = 1 + this.calculateMaxCaptureChain(
+                    board, landingRowIdx, landingColIdx, pieceObj, [...capturedKeysList, victimKeyStr], [deltaRow, deltaCol]
+                  );
+                  maxChainLength = Math.max(maxChainLength, chainVal);
+                }
+              }
+            }
+            break; // Stop looking in this direction after hitting any piece
+          }
+        }
+      } else {
+        // Regular piece jump logic
+        const targetRowIdx = rowIdx + deltaRow;
+        const targetColIdx = colIdx + deltaCol;
+        const landingRowIdx = rowIdx + deltaRow * 2;
+        const landingColIdx = colIdx + deltaCol * 2;
+
+        const isLandingInBounds = (landingRowIdx >= 0 && landingRowIdx < BOARD_SIZE && landingColIdx >= 0 && landingColIdx < BOARD_SIZE);
+
+        if (isLandingInBounds) {
+          const potentialVictim = this.getPieceAtOnBoard(board, targetRowIdx, targetColIdx);
+          const landingSpotPiece = this.getPieceAtOnBoard(board, landingRowIdx, landingColIdx);
+          const victimKeyStr = `${targetRowIdx},${targetColIdx}`;
+
+          const isVictimOpponent = (potentialVictim && potentialVictim.color === opponentColorVal);
+          const isVictimNotAlreadyCaptured = !capturedKeysList.includes(victimKeyStr);
+          const isLandingUnoccupied = !landingSpotPiece;
+
+          if (isVictimOpponent && isVictimNotAlreadyCaptured && isLandingUnoccupied) {
+            const chainVal = 1 + this.calculateMaxCaptureChain(
+              board, landingRowIdx, landingColIdx, pieceObj, [...capturedKeysList, victimKeyStr], [deltaRow, deltaCol]
+            );
+            maxChainLength = Math.max(maxChainLength, chainVal);
+          }
         }
       }
     }
@@ -3970,287 +4082,183 @@ const enhancedAI = {
     return maxChainLength;
   },
 
-  // NEW: Calculate maximum capture chain length from a position
-  calculateMaxCaptureChain(board, row, col, piece, alreadyCaptured) {
-    const directions = [
-      [-1, -1],
-      [-1, 1],
-      [1, -1],
-      [1, 1],
-    ];
-    let maxChain = 0;
-    const isKing = piece.king === true;
-    const opponentColor = piece.color === "red" ? "black" : "red";
-
-    for (const [dRow, dCol] of directions) {
-      if (isKing) {
-        for (let dist = 1; dist < BOARD_SIZE; dist++) {
-          const targetRow = row + dRow * dist;
-          const targetCol = col + dCol * dist;
-
-          if (
-            targetRow < 0 ||
-            targetRow >= BOARD_SIZE ||
-            targetCol < 0 ||
-            targetCol >= BOARD_SIZE
-          )
-            break;
-
-          const targetPiece = this.getPieceAtOnBoard(
-            board,
-            targetRow,
-            targetCol
-          );
-          if (targetPiece) {
-            if (targetPiece.color === opponentColor) {
-              const captureKey = `${targetRow},${targetCol}`;
-              if (!alreadyCaptured.includes(captureKey)) {
-                // Potential capture - check landing squares
-                for (let landDist = 1; landDist < BOARD_SIZE; landDist++) {
-                  const finalRow = targetRow + dRow * landDist;
-                  const finalCol = targetCol + dCol * landDist;
-
-                  if (
-                    finalRow < 0 ||
-                    finalRow >= BOARD_SIZE ||
-                    finalCol < 0 ||
-                    finalCol >= BOARD_SIZE
-                  )
-                    break;
-                  if (this.getPieceAtOnBoard(board, finalRow, finalCol)) break;
-
-                  // Simulate this capture
-                  const newBoard = this.copyBoard(board);
-                  newBoard[finalRow][finalCol] = newBoard[row][col];
-                  newBoard[row][col] = null;
-                  newBoard[targetRow][targetCol] = null;
-
-                  const continuationChain = this.calculateMaxCaptureChain(
-                    newBoard,
-                    finalRow,
-                    finalCol,
-                    piece,
-                    [...alreadyCaptured, captureKey]
-                  );
-                  maxChain = Math.max(maxChain, 1 + continuationChain);
-                }
-              }
-            }
-            break; // Blocked
-          }
-        }
-      } else {
-        const targetRow = row + dRow;
-        const targetCol = col + dCol;
-        const jumpRow = row + dRow * 2;
-        const jumpCol = col + dCol * 2;
-
-        if (
-          jumpRow >= 0 &&
-          jumpRow < BOARD_SIZE &&
-          jumpCol >= 0 &&
-          jumpCol < BOARD_SIZE
-        ) {
-          const middlePiece = this.getPieceAtOnBoard(
-            board,
-            targetRow,
-            targetCol
-          );
-          const landSquare = this.getPieceAtOnBoard(board, jumpRow, jumpCol);
-          const captureKey = `${targetRow},${targetCol}`;
-
-          if (
-            middlePiece &&
-            middlePiece.color === opponentColor &&
-            !landSquare &&
-            !alreadyCaptured.includes(captureKey)
-          ) {
-            // Simulate this capture
-            const newBoard = this.copyBoard(board);
-            newBoard[jumpRow][jumpCol] = newBoard[row][col];
-            newBoard[row][col] = null;
-            newBoard[targetRow][targetCol] = null;
-
-            const continuationChain = this.calculateMaxCaptureChain(
-              newBoard,
-              jumpRow,
-              jumpCol,
-              piece,
-              [...alreadyCaptured, captureKey]
-            );
-
-            maxChain = Math.max(maxChain, 1 + continuationChain);
-          }
-        }
-      }
-    }
-
-    return maxChain;
-  },
-
-  // NEW: Evaluate tactical pressure creation
+  /**
+   * Evaluate the creation of tactical pressure on the opponent.
+   * Pressure is defined by created threats, maintaining initiative, and activity gain.
+   * 
+   * @param {Object} move - The move object
+   * @returns {number} The tactical pressure score
+   */
   evaluateTacticalPressure(move) {
     let pressureScore = 0;
 
-    // Count threats created by this move
-    const threatsCreated = this.countThreatsCreatedByMove(move);
-    pressureScore += threatsCreated * 75;
+    // 1. Reward creating new immediate capture threats
+    const newThreatsCount = this.countThreatsCreatedByMove(move);
+    pressureScore += newThreatsCount * 75;
 
-    // Evaluate tempo gain
+    // 2. Reward maintaining the 'initiative' (e.g., performing a capture)
     if (move.isCapture) {
-      pressureScore += 50; // Captures maintain initiative
+      pressureScore += 50;
     }
 
-    // Evaluate piece activity improvement
-    const activityGain = this.calculateActivityGain(move);
-    pressureScore += activityGain;
+    // 3. Reward general improvement in piece activity and positioning
+    const activityImprovementScore = this.calculateActivityGain(move);
+    pressureScore += activityImprovementScore;
 
     return pressureScore;
   },
 
-  // NEW: Calculate actual opponent capture opportunities after move
+  /**
+   * Calculate all actual opponent capture opportunities available after our move.
+   * 
+   * @param {Object} move - The move object
+   * @returns {number} The total count of opponent capture opportunities
+   */
   calculateOpponentCaptureOpportunities(move) {
     const simulatedBoard = this.simulateMove(move);
-    let totalThreats = 0;
+    let totalOpponentThreatCount = 0;
 
-    // Count all opponent capture opportunities
+    // Count every possible capture an opponent could make next turn
     for (let row = 0; row < BOARD_SIZE; row++) {
       for (let col = 0; col < BOARD_SIZE; col++) {
-        const piece = this.getPieceAtOnBoard(simulatedBoard, row, col);
-        if (piece && piece.color === "red") {
-          const captures = this.findCaptureOpportunitiesOnBoard(
-            simulatedBoard,
-            row,
-            col,
-            piece
+        const pieceAtPos = this.getPieceAtOnBoard(simulatedBoard, row, col);
+        
+        if (pieceAtPos && pieceAtPos.color === "red") {
+          const captureOptions = this.findCaptureOpportunitiesOnBoard(
+            simulatedBoard, row, col, pieceAtPos
           );
-          totalThreats += captures.length;
+          totalOpponentThreatCount += captureOptions.length;
         }
       }
     }
 
-    return totalThreats;
+    return totalOpponentThreatCount;
   },
 
+  /**
+   * Evaluate the current game phase (opening vs endgame) and adjust heuristics.
+   * Endgame is defined by fewer pieces, opening by many pieces.
+   * 
+   * @param {Object} move - The move object
+   * @returns {number} The game phase adjustment score
+   */
   evaluateGamePhase(move) {
-    let phaseScore = 0;
-    let totalPieces = 0;
+    let phaseBonus = 0;
+    let totalPiecesOnBoard = 0;
 
-    for (let row = 0; row < BOARD_SIZE; row++) {
-      for (let col = 0; col < BOARD_SIZE; col++) {
-        if (this.getPieceAt(row, col)) totalPieces++;
+    for (let r = 0; r < BOARD_SIZE; r++) {
+      for (let c = 0; c < BOARD_SIZE; c++) {
+        if (this.getPieceAt(r, c)) totalPiecesOnBoard++;
       }
     }
 
-    if (totalPieces <= 16) {
-      // Endgame: Kings should be active, pieces should advance
+    if (totalPiecesOnBoard <= 16) {
+      // Endgame: Prioritize king activity and piece advancement
       if (move.piece.dataset.king === "true") {
-        phaseScore += this.weights.endgameKingBonus;
+        phaseBonus += this.weights.endgameKingBonus;
       }
-    } else if (totalPieces >= 32) {
-      // Opening: Develop pieces, control center
-      phaseScore +=
-        this.evaluateCenterControl(move) *
-        this.weights.openingCenterBonusFactor;
+    } else if (totalPiecesOnBoard >= 32) {
+      // Opening: Prioritize development and center control
+      phaseBonus += this.evaluateCenterControl(move) * this.weights.openingCenterBonusFactor;
     }
 
-    return phaseScore;
+    return phaseBonus;
   },
 
+  /**
+   * Evaluate the threats posed by the opponent after this move.
+   * Incorporates enhanced tactical analysis and attack mode evaluation.
+   * 
+   * @param {Object} move - The move object
+   * @returns {number} The opponent threat score
+   */
   evaluateOpponentThreats(move) {
-    let threatScore = 0;
+    let combinedThreatScore = 0;
 
-    // Use enhanced opponent threat calculation
-    const opponentThreats = this.countOpponentThreatsAfterMove(move);
-    threatScore -= opponentThreats * this.weights.opponentThreatPenalty;
+    // 1. Calculate the direct material threat from opponent captures
+    const opponentCaptureCount = this.countOpponentThreatsAfterMove(move);
+    combinedThreatScore -= opponentCaptureCount * this.weights.opponentThreatPenalty;
 
-    // Store the fromRow for evaluation context
-    enhancedAI.currentMoveFromRow = move.fromRow;
+    // 2. Evaluate the safety of the piece after the move
+    combinedThreatScore += this.evaluateMoveSafety(move);
 
-    // Calculate this specific move's evaluation
-    const evaluation = this.evaluateMoveSafety(move);
-    // Add enhanced attack mode evaluation
-    const attackModeScore = this.evaluateAttackMode(move);
-    threatScore += attackModeScore;
+    // 3. Add the attack mode score (sacrifices, exchanges, etc.)
+    combinedThreatScore += this.evaluateAttackMode(move);
 
-    return threatScore;
+    return combinedThreatScore;
   },
 
   // NEW: Helper functions for enhanced attack mode
 
   // Simulate complete attack including sacrifice and recapture
+  /**
+   * Simulate a complete tactical sequence including a sacrifice and the expected recapture.
+   * 
+   * @param {Object} move - The initial move object
+   * @returns {Array} The simulated board state after the sequence
+   */
   simulateCompleteAttack(move) {
-    const board = this.simulateMove(move);
+    const simulatedBoard = this.simulateMove(move);
 
-    // If piece will be captured, simulate that too
+    // If our piece is inevitably captured after the move, simulate that capture
     if (this.willBeUnderThreat(move.toRow, move.toCol, move.piece)) {
-      // Find the most likely attacker and simulate recapture
-      const attacker = this.findMostLikelyAttacker(
-        board,
-        move.toRow,
-        move.toCol
-      );
-      if (attacker) {
-        board[attacker.row][attacker.col] = null;
-        board[move.toRow][move.toCol] = null; // Our piece is captured
+      const primaryAttacker = this.findMostLikelyAttacker(simulatedBoard, move.toRow, move.toCol);
+      
+      if (primaryAttacker) {
+        // Execute the single-step jump on the simulated board
+        simulatedBoard[primaryAttacker.row][primaryAttacker.col] = null;
+        simulatedBoard[move.toRow][move.toCol] = null;
       }
     }
 
-    return board;
+    return simulatedBoard;
   },
 
   // Find piece most likely to recapture
+  /**
+   * Identify the opponent piece most likely to perform a recapture at a given target.
+   * 
+   * @param {Array} board - The board array
+   * @param {number} targetRow - The target row to recapture
+   * @param {number} targetCol - The target column to recapture
+   * @returns {Object|null} The attacker info {row, col, piece} or null
+   */
   findMostLikelyAttacker(board, targetRow, targetCol) {
-    const directions = [
-      [-1, -1],
-      [-1, 1],
-      [1, -1],
-      [1, 1],
-    ];
+    const directions = [[-1, -1], [-1, 1], [1, -1], [1, 1]];
 
-    for (const [dRow, dCol] of directions) {
-      // For each direction, find if there's a landing square behind the target
-      const landingRow = targetRow + dRow;
-      const landingCol = targetCol + dCol;
+    for (const [deltaRow, deltaCol] of directions) {
+      // Check if there is an empty landing square behind our target
+      const landingRow = targetRow + deltaRow;
+      const landingCol = targetCol + deltaCol;
 
       if (
-        landingRow >= 0 &&
-        landingRow < BOARD_SIZE &&
-        landingCol >= 0 &&
-        landingCol < BOARD_SIZE
+        landingRow >= 0 && landingRow < BOARD_SIZE &&
+        landingCol >= 0 && landingCol < BOARD_SIZE
       ) {
-        const landingPiece = this.getPieceAtOnBoard(
-          board,
-          landingRow,
-          landingCol
-        );
-        if (!landingPiece) {
-          // Look for attackers in opposite direction
+        const landingSquarePiece = this.getPieceAtOnBoard(board, landingRow, landingCol);
+        
+        if (!landingSquarePiece) {
+          // Scan in the opposite direction for potential attackers (jumpers)
           for (let dist = 1; dist < BOARD_SIZE; dist++) {
-            const attackRow = targetRow - dRow * dist;
-            const attackCol = targetCol - dCol * dist;
+            const attackerRow = targetRow - deltaRow * dist;
+            const attackerCol = targetCol - deltaCol * dist;
 
             if (
-              attackRow < 0 ||
-              attackRow >= BOARD_SIZE ||
-              attackCol < 0 ||
-              attackCol >= BOARD_SIZE
-            )
-              break;
+              attackerRow < 0 || attackerRow >= BOARD_SIZE ||
+              attackerCol < 0 || attackerCol >= BOARD_SIZE
+            ) break;
 
-            const attacker = this.getPieceAtOnBoard(
-              board,
-              attackRow,
-              attackCol
-            );
-            if (attacker) {
-              if (attacker.color === "red") {
-                const isKing = attacker.king === true;
-                if (isKing || dist === 1) {
-                  return { row: attackRow, col: attackCol, piece: attacker };
+            const potentialAttacker = this.getPieceAtOnBoard(board, attackerRow, attackerCol);
+            
+            if (potentialAttacker) {
+              // Opponent is 'red'
+              if (potentialAttacker.color === "red") {
+                const canReach = (potentialAttacker.king === true) || (dist === 1);
+                if (canReach) {
+                  return { row: attackerRow, col: attackerCol, piece: potentialAttacker };
                 }
               }
-              break; // Blocked
+              break; // Path blocked by another piece
             }
           }
         }
@@ -4261,9 +4269,16 @@ const enhancedAI = {
   },
 
   // Get piece at position on a board array
+  /**
+   * Helper: Get a piece at a specific position on a board array.
+   * 
+   * @param {Array} board - The board array
+   * @param {number} row - Row index
+   * @param {number} col - Column index
+   * @returns {Object|null} The piece object or null
+   */
   getPieceAtOnBoard(board, row, col) {
-    if (row < 0 || row >= BOARD_SIZE || col < 0 || col >= BOARD_SIZE)
-      return null;
+    if (row < 0 || row >= BOARD_SIZE || col < 0 || col >= BOARD_SIZE) return null;
     return board[row][col];
   },
 
@@ -4350,40 +4365,30 @@ const enhancedAI = {
         }
       } else {
         // Regular piece capture logic
-        const targetRow = row + dRow;
-        const targetCol = col + dCol;
-        const landingRow = row + dRow * 2;
-        const landingCol = col + dCol * 2;
+        const targetRowIdx = row + deltaRow;
+        const targetColIdx = col + deltaCol;
+        const landingRowIdx = row + deltaRow * 2;
+        const landingColIdx = col + deltaCol * 2;
 
         if (
-          landingRow >= 0 &&
-          landingRow < BOARD_SIZE &&
-          landingCol >= 0 &&
-          landingCol < BOARD_SIZE
+          landingRowIdx >= 0 && landingRowIdx < BOARD_SIZE &&
+          landingColIdx >= 0 && landingColIdx < BOARD_SIZE
         ) {
-          const targetPiece = this.getPieceAtOnBoard(
-            board,
-            targetRow,
-            targetCol
-          );
-          const landingPiece = this.getPieceAtOnBoard(
-            board,
-            landingRow,
-            landingCol
-          );
+          const targetPieceObj = this.getPieceAtOnBoard(board, targetRowIdx, targetColIdx);
+          const landingPieceObj = this.getPieceAtOnBoard(board, landingRowIdx, landingColIdx);
 
           if (
-            targetPiece &&
-            targetPiece.color === opponentColor &&
-            !landingPiece
+            targetPieceObj &&
+            targetPieceObj.color === opponentColor &&
+            !landingPieceObj
           ) {
             captures.push({
               fromRow: row,
               fromCol: col,
-              toRow: landingRow,
-              toCol: landingCol,
-              capturedRow: targetRow,
-              capturedCol: targetCol,
+              toRow: landingRowIdx,
+              toCol: landingColIdx,
+              capturedRow: targetRowIdx,
+              capturedCol: targetColIdx,
             });
           }
         }
@@ -4394,63 +4399,81 @@ const enhancedAI = {
   },
 
   // Copy board for simulation
+  /**
+   * Helper: Deep copy a board array for simulation.
+   * 
+   * @param {Array} board - The board array to copy
+   * @returns {Array} The deep copy of the board
+   */
   copyBoard(board) {
-    return board.map((row) => (row ? { ...row } : null));
+    return board.map((row) => (row ? row.map(cell => cell ? { ...cell } : null) : null));
   },
 
   // Calculate piece value for exchanges
+  /**
+   * Calculate the total material value of pieces captured in a move.
+   * Kings are worth 300, regular pieces 100.
+   * 
+   * @param {Object} move - The move object
+   * @returns {number} The total captured material value
+   */
   calculatePieceValue(move) {
-    // Calculate value of pieces we're capturing
-    let totalValue = 0;
+    let capturedMaterialSum = 0;
 
     if (move.capturedPieces && move.capturedPieces.length > 0) {
-      // King multi-capture
-      for (const capturedKey of move.capturedPieces) {
-        const [capturedRow, capturedCol] = capturedKey.split(",").map(Number);
-        const capturedPiece = this.getPieceAt(capturedRow, capturedCol);
-        if (capturedPiece) {
-          totalValue += capturedPiece.dataset.king === "true" ? 300 : 100;
+      // Handle multi-capture sequences
+      for (const capturedCoordsKey of move.capturedPieces) {
+        const [targetRowIdx, targetColIdx] = capturedCoordsKey.split(",").map(Number);
+        const pieceAtPos = this.getPieceAt(targetRowIdx, targetColIdx);
+        
+        if (pieceAtPos) {
+          capturedMaterialSum += pieceAtPos.dataset.king === "true" ? 300 : 100;
         }
       }
     } else {
-      // Regular capture - ensure it's a valid 2-square jump
-      const rowDiff = Math.abs(move.toRow - move.fromRow);
-      const colDiff = Math.abs(move.toCol - move.fromCol);
+      // Handle a single capture move (calculated as a 2nd order jump)
+      const rowDistance = Math.abs(move.toRow - move.fromRow);
+      const colDistance = Math.abs(move.toCol - move.fromCol);
 
-      if (rowDiff === 2 && colDiff === 2) {
-        const capturedRow = (move.fromRow + move.toRow) / 2;
-        const capturedCol = (move.fromCol + move.toCol) / 2;
-        const capturedPiece = this.getPieceAt(capturedRow, capturedCol);
-        if (capturedPiece) {
-          totalValue += capturedPiece.dataset.king === "true" ? 300 : 100;
+      if (rowDistance === 2 && colDistance === 2) {
+        const midRowIdx = (move.fromRow + move.toRow) / 2;
+        const midColIdx = (move.fromCol + move.toCol) / 2;
+        const pieceInMiddle = this.getPieceAt(midRowIdx, midColIdx);
+        
+        if (pieceInMiddle) {
+          capturedMaterialSum += pieceInMiddle.dataset.king === "true" ? 300 : 100;
         }
       }
     }
 
-    return totalValue;
+    return capturedMaterialSum;
   },
 
   // Check if move enables promotion
+  /**
+   * Check if a move enables a path for friendly pieces to achieve promotion.
+   * 
+   * @param {Object} move - The move object
+   * @returns {boolean} True if a promotion path is cleared
+   */
   enablesPromotion(move) {
-    // Check if this move clears a path for promotion
     const simulatedBoard = this.simulateMove(move);
 
-    // Look for our pieces that now have clear promotion paths
-    // Look for our pieces that now have clear promotion paths (Black moves towards BOARD_SIZE-1)
-    for (let col = 0; col < BOARD_SIZE; col++) {
-      for (let row = BOARD_SIZE - 2; row >= 0; row--) {
-        // Check from back to front
-        const piece = this.getPieceAtOnBoard(simulatedBoard, row, col);
-        if (piece && piece.color === "black" && !piece.king) {
-          // Check if path to promotion is clear
-          let pathClear = true;
-          for (let checkRow = row + 1; checkRow < BOARD_SIZE; checkRow++) {
-            if (this.getPieceAtOnBoard(simulatedBoard, checkRow, col)) {
-              pathClear = false;
+    // Scan for friendly black pieces (which move towards BOARD_SIZE-1)
+    for (let c = 0; col < BOARD_SIZE; c++) {
+      for (let r = BOARD_SIZE - 2; r >= 0; r--) {
+        const pieceAtPos = this.getPieceAtOnBoard(simulatedBoard, r, c);
+        
+        if (pieceAtPos && pieceAtPos.color === "black" && !pieceAtPos.king) {
+          // Verify if the vertical path to the promotion line is clear of obstacles
+          let isPromotionPathClear = true;
+          for (let rowIdx = r + 1; rowIdx < BOARD_SIZE; rowIdx++) {
+            if (this.getPieceAtOnBoard(simulatedBoard, rowIdx, c)) {
+              isPromotionPathClear = false;
               break;
             }
           }
-          if (pathClear) return true;
+          if (isPromotionPathClear) return true;
         }
       }
     }
@@ -4459,388 +4482,441 @@ const enhancedAI = {
   },
 
   // Calculate king activation benefit
+  /**
+   * Calculate the mobility benefit for friendly kings after a move.
+   * 
+   * @param {Object} move - The move object
+   * @returns {number} The total activation benefit score
+   */
   calculateKingActivationBenefit(move) {
-    let benefit = 0;
+    let activationBenefit = 0;
     const simulatedBoard = this.simulateMove(move);
 
-    // Check if our kings have more mobility after this move
-    for (let row = 0; row < BOARD_SIZE; row++) {
-      for (let col = 0; col < BOARD_SIZE; col++) {
-        const piece = this.getPieceAtOnBoard(simulatedBoard, row, col);
-        if (piece && piece.color === "black" && piece.king) {
-          const mobility = this.calculateKingMobilityOnBoard(
-            simulatedBoard,
-            row,
-            col
-          );
-          benefit += mobility * 5; // Small bonus per mobility point
+    for (let r = 0; r < BOARD_SIZE; r++) {
+      for (let c = 0; c < BOARD_SIZE; c++) {
+        const pieceAtPos = this.getPieceAtOnBoard(simulatedBoard, r, c);
+        
+        if (pieceAtPos && pieceAtPos.color === "black" && pieceAtPos.king) {
+          const kingMobilityPoints = this.calculateKingMobilityOnBoard(simulatedBoard, r, c);
+          activationBenefit += kingMobilityPoints * 5;
         }
       }
     }
 
-    return benefit;
+    return activationBenefit;
   },
 
   // Calculate king mobility on a specific board
+  /**
+   * Calculate legal non-capture mobility for a king on a specific board layout.
+   * 
+   * @param {Array} board - The board array
+   * @param {number} row - King row
+   * @param {number} col - King column
+   * @returns {number} The count of available squares
+   */
   calculateKingMobilityOnBoard(board, row, col) {
-    let moves = 0;
-    const directions = [
-      [-1, -1],
-      [-1, 1],
-      [1, -1],
-      [1, 1],
-    ];
+    let mobilityCount = 0;
+    const directions = [[-1, -1], [-1, 1], [1, -1], [1, 1]];
 
-    for (const [dRow, dCol] of directions) {
-      for (let distance = 1; distance < BOARD_SIZE; distance++) {
-        const newRow = row + dRow * distance;
-        const newCol = col + dCol * distance;
+    for (const [deltaRow, deltaCol] of directions) {
+      for (let dist = 1; dist < BOARD_SIZE; dist++) {
+        const targetRow = row + deltaRow * dist;
+        const targetCol = col + deltaCol * dist;
+        
         if (
-          newRow < 0 ||
-          newRow >= BOARD_SIZE ||
-          newCol < 0 ||
-          newCol >= BOARD_SIZE
-        )
-          break;
-        if (this.getPieceAtOnBoard(board, newRow, newCol)) break;
-        moves++;
+          targetRow < 0 || targetRow >= BOARD_SIZE ||
+          targetCol < 0 || targetCol >= BOARD_SIZE
+        ) break;
+        
+        if (this.getPieceAtOnBoard(board, targetRow, targetCol)) break;
+        mobilityCount++;
       }
     }
 
-    return moves;
+    return mobilityCount;
   },
 
   // Calculate damage to opponent formation
+  /**
+   * Evaluate the degree of disruption caused to the opponent's formation.
+   * Rewards moves that isolate opponent pieces.
+   * 
+   * @param {Object} move - The move object
+   * @returns {number} The formation damage score
+   */
   calculateOpponentFormationDamage(move) {
-    let damage = 0;
+    let formationDamageScore = 0;
+    if (!move.isCapture) return 0;
 
-    // Check if captured pieces break opponent formation
-    if (move.isCapture) {
-      // Calculate how many opponent pieces become isolated after capture
-      const simulatedBoard = this.simulateMove(move);
+    const simulatedBoard = this.simulateMove(move);
 
-      for (let row = 0; row < BOARD_SIZE; row++) {
-        for (let col = 0; col < BOARD_SIZE; col++) {
-          const piece = this.getPieceAtOnBoard(simulatedBoard, row, col);
-          if (piece && piece.color === "red") {
-            // Check if this piece is now isolated
-            const neighbors = this.countNeighborsOnBoard(
-              simulatedBoard,
-              row,
-              col,
-              "red"
-            );
-            if (neighbors === 0) {
-              damage += 30; // Bonus for isolating opponent piece
-            }
+    for (let r = 0; r < BOARD_SIZE; r++) {
+      for (let c = 0; c < BOARD_SIZE; c++) {
+        const pieceAtPos = this.getPieceAtOnBoard(simulatedBoard, r, c);
+        
+        if (pieceAtPos && pieceAtPos.color === "red") {
+          // Identify if the capture resulted in an isolated opponent piece
+          const neighborCount = this.countNeighborsOnBoard(simulatedBoard, r, c, "red");
+          if (neighborCount === 0) {
+            formationDamageScore += 30;
           }
         }
       }
     }
 
-    return damage;
+    return formationDamageScore;
   },
 
-  // Count neighbors of same color on board
+  /**
+   * Count how many friendly neighbors a piece has at a specific position.
+   * 
+   * @param {Array} board - The board array
+   * @param {number} row - Piece row
+   * @param {number} col - Piece column
+   * @param {string} color - The color to match
+   * @returns {number} The count of neighbors
+   */
   countNeighborsOnBoard(board, row, col, color) {
-    let neighbors = 0;
-    const adjacents = [
-      [-1, -1],
-      [-1, 1],
-      [1, -1],
-      [1, 1],
-      [-1, 0],
-      [1, 0],
-      [0, -1],
-      [0, 1],
+    let neighborCount = 0;
+    const neighborOffsets = [
+      [-1, -1], [-1, 1], [1, -1], [1, 1],
+      [-1, 0], [1, 0], [0, -1], [0, 1],
     ];
 
-    for (const [dRow, dCol] of adjacents) {
-      const checkRow = row + dRow;
-      const checkCol = col + dCol;
-      const piece = this.getPieceAtOnBoard(board, checkRow, checkCol);
-      if (piece && piece.color === color) {
-        neighbors++;
+    for (const [deltaRow, deltaCol] of neighborOffsets) {
+      const checkRowIdx = row + deltaRow;
+      const checkColIdx = col + deltaCol;
+      const pieceAtPos = this.getPieceAtOnBoard(board, checkRowIdx, checkColIdx);
+      if (pieceAtPos && pieceAtPos.color === color) {
+        neighborCount++;
       }
     }
 
-    return neighbors;
+    return neighborCount;
   },
 
-  // Calculate threats neutralized by move
+  /**
+   * Calculate how many opponent capture threats are neutralized by performing this move.
+   * 
+   * @param {Object} move - The move object
+   * @returns {number} The number of neutralized threats
+   */
   calculateThreatsNeutralized(move) {
-    // Count opponent threats before and after move
-    const threatsBefore = this.calculateOpponentCaptureOpportunities({
-      fromRow: 0,
-      fromCol: 0,
-      toRow: 0,
-      toCol: 0,
+    // Determine the baseline threat count before any move is made
+    const threatsBeforeMove = this.calculateOpponentCaptureOpportunities({
+      fromRow: 0, fromCol: 0, toRow: 0, toCol: 0,
     });
-    const threatsAfter = this.calculateOpponentCaptureOpportunities(move);
+    
+    // Determine the threat count after the simulated move
+    const threatsAfterMove = this.calculateOpponentCaptureOpportunities(move);
 
-    return Math.max(0, threatsBefore - threatsAfter);
+    return Math.max(0, threatsBeforeMove - threatsAfterMove);
   },
 
-  // Count threats created by a move
+  /**
+   * Count how many new immediate capture threats are created by this move.
+   * 
+   * @param {Object} move - The move object
+   * @returns {number} The number of new threats created
+   */
   countThreatsCreatedByMove(move) {
     const simulatedBoard = this.simulateMove(move);
-    let threats = 0;
+    let createdThreatCount = 0;
+    const { toRow: targetRow, toCol: targetCol } = move;
 
-    // Count how many opponent pieces we can now capture
-    const directions = [
-      [-1, -1],
-      [-1, 1],
-      [1, -1],
-      [1, 1],
-    ];
+    // Scan for new capture opportunities originating from the destination
+    const jumpDirections = [[-1, -1], [-1, 1], [1, -1], [1, 1]];
 
-    for (const [dRow, dCol] of directions) {
-      const jumpRow = move.toRow + dRow * 2;
-      const jumpCol = move.toCol + dCol * 2;
+    for (const [deltaRow, deltaCol] of jumpDirections) {
+      const landingRowIdx = targetRow + deltaRow * 2;
+      const landingColIdx = targetCol + deltaCol * 2;
 
       if (
-        jumpRow >= 0 &&
-        jumpRow < BOARD_SIZE &&
-        jumpCol >= 0 &&
-        jumpCol < BOARD_SIZE
+        landingRowIdx >= 0 && landingRowIdx < BOARD_SIZE &&
+        landingColIdx >= 0 && landingColIdx < BOARD_SIZE
       ) {
-        const middleRow = move.toRow + dRow;
-        const middleCol = move.toCol + dCol;
-        const middlePiece = this.getPieceAtOnBoard(
-          simulatedBoard,
-          middleRow,
-          middleCol
-        );
-        const landSquare = this.getPieceAtOnBoard(
-          simulatedBoard,
-          jumpRow,
-          jumpCol
-        );
+        const victimRowIdx = targetRow + deltaRow;
+        const victimColIdx = targetCol + deltaCol;
+        const victimPiece = this.getPieceAtOnBoard(simulatedBoard, victimRowIdx, victimColIdx);
+        const landingCell = this.getPieceAtOnBoard(simulatedBoard, landingRowIdx, landingColIdx);
 
-        if (middlePiece && middlePiece.color === "red" && !landSquare) {
-          threats++;
+        // Check if we can capture an opponent (red) piece
+        if (victimPiece && victimPiece.color === "red" && !landingCell) {
+          createdThreatCount++;
         }
       }
     }
 
-    return threats;
+    return createdThreatCount;
   },
 
-  // Calculate activity gain from move
+  /**
+   * Evaluate the gain in activity and positional pressure from a move.
+   * Centralizes pieces and advances them forward.
+   * 
+   * @param {Object} move - The move object
+   * @returns {number} The activity gain score
+   */
   calculateActivityGain(move) {
-    let activityGain = 0;
+    let activityGainedScore = 0;
+    const boardCenterIdx = (BOARD_SIZE - 1) / 2;
 
-    // Central positions are more active
-    const centerPoint = (BOARD_SIZE - 1) / 2;
-    const centerDistance =
-      Math.abs(move.toRow - centerPoint) + Math.abs(move.toCol - centerPoint);
-    const oldCenterDistance =
-      Math.abs(move.fromRow - centerPoint) +
-      Math.abs(move.fromCol - centerPoint);
+    // Reward moves that bring pieces closer to the geometric center
+    const newDistToCenter = Math.abs(move.toRow - boardCenterIdx) + Math.abs(move.toCol - boardCenterIdx);
+    const oldDistToCenter = Math.abs(move.fromRow - boardCenterIdx) + Math.abs(move.fromCol - boardCenterIdx);
 
-    if (centerDistance < oldCenterDistance) {
-      activityGain += (oldCenterDistance - centerDistance) * 10;
+    if (newDistToCenter < oldDistToCenter) {
+      activityGainedScore += (oldDistToCenter - newDistToCenter) * 10;
     }
 
-    // Forward movement for regular pieces
-    if (move.piece.dataset.king !== "true" && move.toRow > move.fromRow) {
-      activityGain += (move.toRow - move.fromRow) * 15;
+    // Reward the forward advancement of regular pawns
+    const isPawn = move.piece.dataset.king !== "true";
+    if (isPawn && move.toRow > move.fromRow) {
+      activityGainedScore += (move.toRow - move.fromRow) * 15;
     }
 
-    return activityGain;
+    return activityGainedScore;
   },
 
-  evaluateMobility(color) {
-    let mobilityScore = 0;
-    const size = BOARD_SIZE || 10;
-    for (let row = 0; row < size; row++) {
-      for (let col = 0; col < size; col++) {
-        const piece = this.getPieceAt(row, col);
-        if (piece && piece.dataset.color === color) {
-          const moves = this.getPieceMoves(row, col, piece);
-          mobilityScore += moves.length * this.weights.mobility;
+  /**
+   * Evaluate the collective mobility of all pieces of a given color.
+   * 
+   * @param {string} pieceColor - The color to evaluate ('black' or 'red')
+   * @returns {number} The collective mobility score
+   */
+  evaluateMobility(pieceColor) {
+    let totalMobilityScore = 0;
+    const boardDim = BOARD_SIZE || 10;
+
+    for (let r = 0; r < boardDim; r++) {
+      for (let c = 0; c < boardDim; c++) {
+        const pieceAtPos = this.getPieceAt(r, c);
+        if (pieceAtPos && pieceAtPos.dataset.color === pieceColor) {
+          const availablePieceMoves = this.getPieceMoves(r, c, pieceAtPos);
+          totalMobilityScore += availablePieceMoves.length * this.weights.mobility;
         }
       }
     }
-    return mobilityScore;
+    return totalMobilityScore;
   },
 
-  getPositionHash(boardState) {
-    let hash = "";
-    const size = BOARD_SIZE || 10;
+  /**
+   * Generate a string-based hash representing the current or simulated board position.
+   * 
+   * @param {Array|null} boardArrayState - Optional board array for hashing
+   * @returns {string} The computed position hash
+   */
+  getPositionHash(boardArrayState) {
+    let boardHashString = "";
+    const boardDim = BOARD_SIZE || 10;
 
-    if (boardState) {
-      for (let r = 0; r < size; r++) {
-        for (let c = 0; c < size; c++) {
-          const p = boardState[r][c];
-          if (!p) hash += "0";
-          else hash += (p.color === "black" ? "B" : "R") + (p.king ? "K" : "P");
+    if (boardArrayState) {
+      // Hash from a simulated board array
+      for (let r = 0; r < boardDim; r++) {
+        for (let c = 0; c < boardDim; c++) {
+          const pieceObj = boardArrayState[r][c];
+          if (!pieceObj) {
+            boardHashString += "0";
+          } else {
+            const colorCode = pieceObj.color === "black" ? "B" : "R";
+            const rankCode = pieceObj.king ? "K" : "P";
+            boardHashString += colorCode + rankCode;
+          }
         }
       }
     } else {
-      for (let row = 0; row < size; row++) {
-        for (let col = 0; col < size; col++) {
-          const piece = this.getPieceAt(row, col);
-          if (piece) {
-            hash +=
-              piece.dataset.color[0].toUpperCase() +
-              (piece.dataset.king === "true" ? "K" : "P");
+      // Hash from the live DOM board
+      for (let r = 0; r < boardDim; r++) {
+        for (let c = 0; c < boardDim; c++) {
+          const domPiece = this.getPieceAt(r, c);
+          if (domPiece) {
+            const colorCode = domPiece.dataset.color[0].toUpperCase();
+            const rankCode = domPiece.dataset.king === "true" ? "K" : "P";
+            boardHashString += colorCode + rankCode;
           } else {
-            hash += "0";
+            boardHashString += "0";
           }
         }
       }
     }
-    return hash;
+    return boardHashString;
   },
 
+  /**
+   * Determine a shorthand string type for a move (e.g., 'CK' for Capture King).
+   * 
+   * @param {Object} move - The move object
+   * @returns {string} The move type shorthand
+   */
   getMoveType(move) {
-    let type = "";
-    // Handle both live DOM element and stored data object
-    const isKing = move.piece ? (move.piece.dataset.king === "true") : move.isKing;
-    const color = move.piece ? move.piece.dataset.color : move.color;
+    let moveTypeCode = "";
     
-    if (move.isCapture) type += "C";
-    if (isKing) type += "K";
-    if (move.toRow === BOARD_SIZE - 1 && color === "black")
-      type += "P";
+    // Accommodate both standard move objects and raw prediction objects
+    const isKingPiece = move.piece ? (move.piece.dataset.king === "true") : !!move.isKing;
+    const pieceColorVal = move.piece ? move.piece.dataset.color : move.color;
+    
+    if (move.isCapture) moveTypeCode += "C";
+    if (isKingPiece) moveTypeCode += "K";
+    
+    // Check for a promotion move (landing on the opponent's back rank)
+    if (move.toRow === BOARD_SIZE - 1 && pieceColorVal === "black") {
+      moveTypeCode += "P";
+    }
 
-    const distance = Math.abs(move.toRow - move.fromRow);
-    if (distance === 1) type += "S";
-    else if (distance >= 2) type += "L";
+    const rowDistanceTraveled = Math.abs(move.toRow - move.fromRow);
+    if (rowDistanceTraveled === 1) {
+      moveTypeCode += "S"; // Simple move
+    } else if (rowDistanceTraveled >= 2 && !move.isCapture) {
+      moveTypeCode += "L"; // Long/Flying king move
+    }
 
-    return type || "N";
+    return moveTypeCode || "N";
   },
 
-  // Enhanced getMoveType for position-aware learning
-  getMoveTypeWithContext(move, boardPosition) {
-    const baseType = this.getMoveType(move);
-    const gameContext = this.getCurrentGameContext();
+  /**
+   * Generate an enhanced move type string that includes positional and situational context.
+   * Useful for pattern-based memory and trajectory tracking.
+   * 
+   * @param {Object} move - The move object
+   * @returns {string} The contextual move type string
+   */
+  getMoveTypeWithContext(move) {
+    const baseTypeCode = this.getMoveType(move);
+    const currentGameContextStr = this.getCurrentGameContext();
     
-    // Add positional context: edge vs center
-    const isEdge = move.toRow <= 1 || move.toRow >= BOARD_SIZE - 2;
-    const isCenter = move.toRow >= 3 && move.toRow <= BOARD_SIZE - 4 && 
-                     move.toCol >= 3 && move.toCol <= BOARD_SIZE - 4;
+    // Determine the spatial context of the destination
+    const isDestAtEdge = (move.toRow <= 1 || move.toRow >= BOARD_SIZE - 2);
+    const isDestInCenter = (move.toRow >= 3 && move.toRow <= BOARD_SIZE - 4 && 
+                            move.toCol >= 3 && move.toCol <= BOARD_SIZE - 4);
     
-    const posContext = isCenter ? "_center" : isEdge ? "_edge" : "_mid";
-    const fullType = `${gameContext}_${baseType}${posContext}`;
+    const spatialContextTag = isDestInCenter ? "_center" : isDestAtEdge ? "_edge" : "_mid";
     
-    return fullType;
+    return `${currentGameContextStr}_${baseTypeCode}${spatialContextTag}`;
   },
 
+  /**
+   * Create a clean, serializable snapshot of a move for persistence and transmission.
+   * Ensures all required properties (color, king status, etc.) are present and standardized.
+   * 
+   * @param {Object} move - The source move object
+   * @returns {Object|null} The standardized move snapshot
+   */
   buildMoveSnapshot(move) {
     if (!move) return null;
 
-    const dataset =
-      move.piece && move.piece.dataset ? move.piece.dataset : null;
-    const inferredColor =
-      (dataset && dataset.color) || move.pieceColor || move.color || null;
+    const pieceDatasetAttr = (move.piece && move.piece.dataset) ? move.piece.dataset : null;
+    const resolvedPieceColor = (pieceDatasetAttr && pieceDatasetAttr.color) || move.pieceColor || move.color || "black";
 
-    const isKing =
-      dataset && dataset.king !== undefined
-        ? dataset.king === "true" || dataset.king === true
-        : move.pieceKing !== undefined
-        ? !!move.pieceKing
-        : !!move.king;
+    const isKingFlag = (pieceDatasetAttr && pieceDatasetAttr.king !== undefined)
+      ? (pieceDatasetAttr.king === "true" || pieceDatasetAttr.king === true)
+      : (move.pieceKing !== undefined ? !!move.pieceKing : !!move.king);
 
-    const snapshot = {
+    const standardizedSnapshot = {
       fromRow: move.fromRow,
       fromCol: move.fromCol,
       toRow: move.toRow,
       toCol: move.toCol,
       isCapture: !!move.isCapture,
       isMultiCapture: !!move.isMultiCapture,
-      capturedPieces: Array.isArray(move.capturedPieces)
-        ? [...move.capturedPieces]
-        : [],
+      capturedPieces: Array.isArray(move.capturedPieces) ? [...move.capturedPieces] : [],
       capturedRow: move.capturedRow !== undefined ? move.capturedRow : null,
       capturedCol: move.capturedCol !== undefined ? move.capturedCol : null,
       capturedKingsCount: move.capturedKingsCount || 0,
       piece: {
         dataset: {
-          color: (inferredColor || "black").toString(),
-          king: isKing ? "true" : "false",
+          color: resolvedPieceColor.toString(),
+          king: isKingFlag ? "true" : "false",
         },
       },
-      pieceColor: (inferredColor || "black").toString(),
-      pieceKing: isKing,
+      pieceColor: resolvedPieceColor.toString(),
+      pieceKing: isKingFlag,
     };
 
+    // Backfill capturedPieces array if single captured coords are present
     if (
-      snapshot.capturedPieces.length === 0 &&
-      snapshot.capturedRow !== null &&
-      snapshot.capturedCol !== null
+      standardizedSnapshot.capturedPieces.length === 0 &&
+      standardizedSnapshot.capturedRow !== null &&
+      standardizedSnapshot.capturedCol !== null
     ) {
-      snapshot.capturedPieces = [
-        `${snapshot.capturedRow},${snapshot.capturedCol}`,
-      ];
+      standardizedSnapshot.capturedPieces = [`${standardizedSnapshot.capturedRow},${standardizedSnapshot.capturedCol}`];
     }
 
-    return snapshot;
+    return standardizedSnapshot;
   },
 
-  storeMoveEvaluation(move, score) {
-    const snapshot = this.buildMoveSnapshot(move);
-    if (!snapshot) return;
+  /**
+   * Log the evaluation details for a specific move into the game trajectory.
+   * 
+   * @param {Object} move - The move object
+   * @param {number} heuristicScore - The raw heuristic score calculated for this move
+   */
+  storeMoveEvaluation(move, heuristicScore) {
+    const moveSnapshotData = this.buildMoveSnapshot(move);
+    if (!moveSnapshotData) return;
 
-    const boardHash = this.getPositionHash();
+    const currentBoardHashStr = this.getPositionHash();
 
     this.memory.lastGameMoves.push({
-      move: snapshot,
-      evaluation: Number.isFinite(score) ? score : 0,
-      position: boardHash,
-      boardHash,
+      move: moveSnapshotData,
+      evaluation: Number.isFinite(heuristicScore) ? heuristicScore : 0,
+      position: currentBoardHashStr,
+      boardHash: currentBoardHashStr,
     });
   },
 
-  recordMoveAttempt(move, score) {
+  /**
+   * Update global memory statistics for move attempts.
+   * 
+   * @param {Object} move - The move object
+   */
+  recordMoveAttempt(move) {
     this.memory.totalMoves++;
     if (move.isCapture) {
       this.memory.captureAttempts++;
     }
   },
 
-  // Enhanced strategic adaptation for middle and endgame phases
+  /**
+   * Dynamically adapt evaluation weights based on the current game state, phase, and opponent style.
+   * This is called before every AI move to ensure the strategy is relevant to the board context.
+   */
   adaptWeights() {
-    // Start with a fresh copy of the base weights for this turn's calculation
+    // Reset weights to base profile before applying adaptations
     this.weights = { ...this.baseWeights };
 
-    // --- Game Phase Analysis ---
-    let totalPieces = 0;
-    let blackPieces = 0;
-    let redPieces = 0;
-    let blackKings = 0;
-    let redKings = 0;
-    let emptyBackRankSquares = 0;
-    let exposedPieces = 0;
+    // --- State Analysis ---
+    let totalPieceCount = 0;
+    let blackPieceCount = 0;
+    let redPieceCount = 0;
+    let blackKingCount = 0;
+    let redKingCount = 0;
+    let emptyBackRankCount = 0;
+    let blackExposedCount = 0;
 
     for (let r = 0; r < BOARD_SIZE; r++) {
       for (let c = 0; c < BOARD_SIZE; c++) {
-        const p = this.getPieceAt(r, c);
-        if (p) {
-          totalPieces++;
-          if (p.dataset.color === "black") {
-            blackPieces++;
-            if (p.dataset.king === "true") blackKings++;
-            // Check if black piece is exposed (no support)
-            if (this.isExposedPiece(r, c, p)) exposedPieces++;
+        const pieceAtPos = this.getPieceAt(r, c);
+        
+        if (pieceAtPos) {
+          totalPieceCount++;
+          if (pieceAtPos.dataset.color === "black") {
+            blackPieceCount++;
+            if (pieceAtPos.dataset.king === "true") blackKingCount++;
+            if (this.isExposedPiece(r, c, pieceAtPos)) blackExposedCount++;
           } else {
-            redPieces++;
-            if (p.dataset.king === "true") redKings++;
+            redPieceCount++;
+            if (pieceAtPos.dataset.king === "true") redKingCount++;
           }
         } else {
-          // Check for empty back rank squares (rows 0, 1 for black)
-          if (r <= 1 && (r + c) % 2 === 1) emptyBackRankSquares++;
+          // Identify gaps in the back defensive rank
+          if (r <= 1 && (r + c) % 2 === 1) emptyBackRankCount++;
         }
       }
     }
 
-    const materialAdvantage = blackPieces - redPieces;
-    const gamePhase = this.determineGamePhase(
-      totalPieces,
-      blackPieces,
-      redPieces
-    );
+    const currentMaterialAdvantage = blackPieceCount - redPieceCount;
+    const currentPhaseTag = this.determineGamePhase(totalPieceCount, blackPieceCount, redPieceCount);
 
     // --- OPPONENT STYLE ADAPTATION ---
     if (this.memory.opponentType === "aggressive") {
@@ -4856,726 +4932,778 @@ const enhancedAI = {
       this.weights.trapCreationBonus = (this.weights.trapCreationBonus || 0) + 500;
     }
 
-    // ENHANCED ENDGAME STRATEGY (8 or fewer pieces total)
-    if (gamePhase === "endgame") {
-      this.weights.safety *= 2.0; // CRITICAL: Don't give away pieces in endgame
-      this.weights.selfDanger *= 3.0; // Extreme caution
-      this.weights.king *= 1.8; // Kings dominate endgame
-      this.weights.mobility *= 1.4; // King mobility crucial
-      this.weights.advancement *= 1.6; // Push for promotion
-      this.weights.sacrificeThreshold *= 2.0; // Much stricter sacrifice rules
+    // --- STRATEGIC ADAPTATIONS BY PHASE ---
+    const isLateGame = totalPieceCount <= 10;
+    const isEndgame = totalPieceCount <= 16;
+    
+    // Dynamic material scaling: pieces become more valuable as they are lost
+    // (12 pieces per side initially, 24 total)
+    const scarcityMultiplier = Math.max(1.0, (24 / Math.max(1, totalPieceCount)) ** 1.5);
+    this.weights.material *= scarcityMultiplier;
+    this.weights.king *= scarcityMultiplier * 1.2;
 
-      // DEFENSIVE ENDGAME: Focus on piece preservation
-      this.weights.cohesion *= 1.8;
+    if (isLateGame) {
+      // LATE GAME STRATEGY (10 or fewer pieces total): Absolute precision
+      this.weights.safety *= 4.0; 
+      this.weights.selfDanger *= 10.0; // Extreme risk aversion - losing a piece is fatal
+      this.weights.king *= 2.5; 
+      this.weights.mobility *= 1.8; 
+      this.weights.advancement *= 2.0; 
+      this.weights.sacrificeThreshold = 100000000; // Zero tolerance
+      this.weights.cohesion *= 3.0;
+      this.weights.support *= 3.0;
+    }
+    else if (isEndgame) {
+      // ENDGAME STRATEGY (11-16 pieces total): King dominance and safety
+      this.weights.safety *= 2.5; 
+      this.weights.selfDanger *= 4.0;
+      this.weights.king *= 2.0; 
+      this.weights.mobility *= 1.5; 
+      this.weights.advancement *= 1.6; 
+      this.weights.sacrificeThreshold *= 3.0; 
+      this.weights.cohesion *= 2.0;
       this.weights.support *= 2.0;
-      this.weights.edgeSafety *= 1.5;
     }
-
-    // ENHANCED MIDGAME STRATEGY (9-16 pieces total)
-    else if (gamePhase === "midgame") {
-      this.weights.safety *= 1.8; // Very high safety priority
-      this.weights.selfDanger *= 2.0; // High caution
-      this.weights.cohesion *= 1.5; // Strong formation
-      this.weights.support *= 1.7; // Pieces support each other
-      this.weights.defensiveValue *= 1.8; // Value defensive moves highly
-
-      // FILL EMPTY SQUARES STRATEGY
-      this.weights.fillGapBonus *= 2.0; // Prioritize filling gaps
-      this.weights.compactFormationBonus *= 1.8; // Stay compact
-      this.weights.fragmentationPenalty *= 2.0; // Avoid splitting forces
-
-      // BACK RANK PROTECTION
-      if (emptyBackRankSquares > 2) {
-        this.weights.backRankLeaving *= 3.0; // Heavily penalize leaving back rank
-      }
-    }
-
-    // OPENING STRATEGY (17+ pieces total)
     else {
-      // Don't boost advancement if it's negative (pure defense mode)
-      if (this.weights.advancement > 0) {
-        this.weights.advancement *= 1.1;
+      // MID/OPENING STRATEGY
+      if (totalPieceCount <= 32) {
+        // Midgame
+        this.weights.safety *= 1.8; 
+        this.weights.selfDanger *= 2.0; 
+        this.weights.cohesion *= 1.5; 
+        this.weights.support *= 1.7; 
+        this.weights.defensiveValue *= 1.8; 
+      } else {
+        // Opening
+        if (this.weights.advancement > 0) {
+          this.weights.advancement *= 1.1;
+        }
+        this.weights.position *= 1.2;
+        this.weights.center *= 1.1;
       }
-      this.weights.position *= 1.2;
-      this.weights.center *= 1.1;
     }
 
-    // --- MATERIAL ADVANTAGE ADJUSTMENTS ---
-
-    // If AI is AHEAD: Play extremely defensively
-    if (materialAdvantage > 1) {
-      this.weights.safety *= 2.5; // Extreme safety when ahead
-      this.weights.cohesion *= 2.0; // Maintain winning formation
-      this.weights.selfDanger *= 3.0; // Ultra risk-averse
-      this.weights.sacrificeThreshold *= 3.0; // Almost never sacrifice
-      this.weights.support *= 2.0; // Pieces protect each other
-      this.weights.edgeSafety *= 1.8; // Use board edges for safety
-
-      // ANTI-SACRIFICE MEASURES
-      this.weights.chainPreventionMajor *= 2.0;
-      this.weights.chainPreventionMinor *= 2.0;
+    // --- MATERIAL RELATIVE ADJUSTMENTS ---
+    if (currentMaterialAdvantage > 1) {
+      // AI is AHEAD: Protect the lead
+      this.weights.safety *= 3.0; 
+      this.weights.cohesion *= 2.5; 
+      this.weights.selfDanger *= 5.0; 
+    }
+    else if (currentMaterialAdvantage < -1) {
+      // AI is BEHIND: Material is priceless
+      this.weights.material *= 8.0; 
+      this.weights.safety *= 6.0;
+      this.weights.selfDanger = 1000000; 
+      this.weights.advancement = -200000; // Massive retraction
     }
 
-    // If AI is BEHIND: PURE DEFENSIVE STALLING (Fortress Recovery)
-    else if (materialAdvantage < -1) {
-      this.weights.material *= 5.0; // Pieces are ultra-precious (250,000 each)
-      this.weights.safety *= 4.0;
-      this.weights.selfDanger = 300000; // CATASTROPHIC risk penalty
-      this.weights.captureBase = 0; // Don't take captures if they are trades
-      this.weights.advancement = -50000; // Strongest penalty for moving forward
-      this.weights.cohesion *= 5.0;
-    }
-
-    // EXPOSED PIECES EMERGENCY
-    if (exposedPieces > 2) {
-      this.weights.support *= 3.0; // Desperately seek piece support
-      this.weights.cohesion *= 2.0; // Group pieces together
-      this.weights.isolationPenalty *= 3.0; // Avoid isolated pieces
+    // --- EMERGENCY STATE ADJUSTMENTS ---
+    if (blackExposedCount > 2) {
+      this.weights.support *= 3.0; // Desperately seek support for isolated pieces
+      this.weights.cohesion *= 2.0; 
+      this.weights.isolationPenalty *= 3.0; 
     }
   },
 
-  // Helper function to determine game phase more accurately
-  determineGamePhase(totalPieces, blackPieces, redPieces) {
-    if (totalPieces <= 16) return "endgame";
-    if (totalPieces <= 32) return "midgame";
+  /**
+   * Determine the current game phase based on remaining piece counts.
+   * 
+   * @param {number} totalCount - Total pieces on board
+   * @param {number} blackCount - Total black pieces
+   * @param {number} redCount - Total red pieces
+   * @returns {string} One of 'endgame', 'midgame', or 'opening'
+   */
+  determineGamePhase(totalCount, blackCount, redCount) {
+    if (totalCount <= 10) return "late-endgame";
+    if (totalCount <= 16) return "endgame";
+    if (totalCount <= 32) return "midgame";
     return "opening";
   },
 
-  // Helper function to check if a piece is exposed (no friendly support)
-  isExposedPiece(row, col, piece) {
-    const supportPositions = [
-      [row - 1, col - 1],
-      [row - 1, col + 1],
-      [row + 1, col - 1],
-      [row + 1, col + 1],
-    ];
+  /**
+   * Check if a piece at a given position is isolated (has no friendly diagonal support).
+   * 
+   * @param {number} r - Row index
+   * @param {number} c - Column index
+   * @param {Object} piece - The piece object
+   * @returns {boolean} True if the piece is exposed (no neighbors)
+   */
+  isExposedPiece(r, c, piece) {
+    const potentialSupportOffsets = [[-1, -1], [-1, 1], [1, -1], [1, 1]];
 
-    for (const [r, c] of supportPositions) {
-      if (r >= 0 && r < BOARD_SIZE && c >= 0 && c < BOARD_SIZE) {
-        const supportPiece = this.getPieceAt(r, c);
-        if (
-          supportPiece &&
-          supportPiece.dataset.color === piece.dataset.color
-        ) {
-          return false; // Has support
+    for (const [deltaRow, deltaCol] of potentialSupportOffsets) {
+      const neighborRow = r + deltaRow;
+      const neighborCol = c + deltaCol;
+      
+      if (neighborRow >= 0 && neighborRow < BOARD_SIZE && neighborCol >= 0 && neighborCol < BOARD_SIZE) {
+        const potentialFriendlyPiece = this.getPieceAt(neighborRow, neighborCol);
+        if (potentialFriendlyPiece && potentialFriendlyPiece.dataset.color === piece.dataset.color) {
+          return false; // Found friendly support
         }
       }
     }
-    return true; // No support found - exposed
+    return true; // No support found
   },
 
-  // Minimax with alpha-beta pruning
-  minimax(depth, alpha, beta, maximizingPlayer, color) {
-    if (depth === 0) {
-      return this.evaluatePosition(color);
+  /**
+   * Recursive Minimax search with Alpha-Beta pruning for tactical look-ahead.
+   * 
+   * @param {number} currentDepth - Current search depth
+   * @param {number} alphaVal - Alpha threshold
+   * @param {number} betaVal - Beta threshold
+   * @param {boolean} isMaximizing - Whether it's the current player's turn to maximize score
+   * @param {string} perspectiveColor - The color from whose perspective we evaluate
+   * @returns {number} The evaluation score
+   */
+  minimax(currentDepth, alphaVal, betaVal, isMaximizing, perspectiveColor) {
+    if (currentDepth === 0) {
+      return this.evaluatePosition(perspectiveColor);
     }
 
-    const moves = this.getAllMoves(
-      maximizingPlayer ? color : color === "black" ? "red" : "black"
-    );
+    const nextPlayerColor = isMaximizing ? perspectiveColor : (perspectiveColor === "black" ? "red" : "black");
+    const legalMovesList = this.getAllMoves(nextPlayerColor);
 
-    if (maximizingPlayer) {
-      let maxEval = -Infinity;
-      for (const move of moves) {
-        // Simulate move
-        const evaluation = this.minimax(depth - 1, alpha, beta, false, color);
-        maxEval = Math.max(maxEval, evaluation);
-        alpha = Math.max(alpha, evaluation);
-        if (beta <= alpha) break;
+    if (isMaximizing) {
+      let maxEvaluationVal = -Infinity;
+      for (const moveObj of legalMovesList) {
+        // Recursively evaluate the resulting position
+        const resultEval = this.minimax(currentDepth - 1, alphaVal, betaVal, false, perspectiveColor);
+        maxEvaluationVal = Math.max(maxEvaluationVal, resultEval);
+        alphaVal = Math.max(alphaVal, resultEval);
+        if (betaVal <= alphaVal) break; // Beta cut-off
       }
-      return maxEval;
+      return maxEvaluationVal;
     } else {
-      let minEval = Infinity;
-      for (const move of moves) {
-        // Simulate move
-        const evaluation = this.minimax(depth - 1, alpha, beta, true, color);
-        minEval = Math.min(minEval, evaluation);
-        beta = Math.min(beta, evaluation);
-        if (beta <= alpha) break;
+      let minEvaluationVal = Infinity;
+      for (const moveObj of legalMovesList) {
+        const resultEval = this.minimax(currentDepth - 1, alphaVal, betaVal, true, perspectiveColor);
+        minEvaluationVal = Math.min(minEvaluationVal, resultEval);
+        betaVal = Math.min(betaVal, resultEval);
+        if (betaVal <= alphaVal) break; // Alpha cut-off
       }
-      return minEval;
+      return minEvaluationVal;
     }
   },
 
   // ==================== MONTE CARLO TREE SEARCH (MCTS) ====================
 
   // MCTS Node class for tree structure
-  createMCTSNode(move = null, parent = null, board = null) {
+  /**
+   * Factory function to create a new node for the Monte Carlo Tree Search.
+   * 
+   * @param {Object|null} moveObj - The move that led to this node
+   * @param {Object|null} parentNode - Reference to the parent node
+   * @param {Array|null} boardState - Simulated board state at this node
+   * @returns {Object} The initialized MCTS node
+   */
+  createMCTSNode(moveObj = null, parentNode = null, boardState = null) {
     return {
-      move: move, // The move that led to this node
-      parent: parent, // Parent node
-      children: [], // Child nodes
-      wins: 0, // Number of wins from this node
-      visits: 0, // Number of times this node was visited
-      untriedMoves: null, // Moves that haven't been tried yet
-      playerJustMoved: null, // Player who just made a move to reach this state
-      board: board, // Board state (simplified representation)
+      move: moveObj, 
+      parent: parentNode,
+      children: [],
+      wins: 0,
+      visits: 0,
+      untriedMoves: null,
+      playerWhoMovedToGetHere: null,
+      board: boardState,
     };
   },
 
   // Main MCTS algorithm
-  async runMCTS(rootBoard, color) {
-    const startTime = Date.now();
+  /**
+   * Execute the Monte Carlo Tree Search (MCTS) algorithm to find the optimal move.
+   * Performs Selection, Expansion, Simulation (Playout), and Backpropagation cycles.
+   * 
+   * @param {Array} rootBoardState - The current board state to start search from
+   * @param {string} aiColor - The color of the AI ('black')
+   * @returns {Promise<Object>} The selected move object
+   */
+  async runMCTS(rootBoardState, aiColor) {
+    const searchStartTime = Date.now();
 
-    // Create root node
-    const rootNode = this.createMCTSNode(null, null, rootBoard);
-    rootNode.playerJustMoved = color === "black" ? "red" : "black";
-    rootNode.untriedMoves = this.getAllMovesForBoard(rootBoard, color);
+    // Initialize root node
+    const mctsRootNode = this.createMCTSNode(null, null, rootBoardState);
+    mctsRootNode.playerWhoMovedToGetHere = (aiColor === "black" ? "red" : "black");
+    mctsRootNode.untriedMoves = this.getAllMovesForBoard(rootBoardState, aiColor);
 
-    let simulations = 0;
-    const timeLimit = this.mcts.timeLimit;
+    let completedSimulationsCount = 0;
+    const searchTimeLimitMs = this.mcts.timeLimit;
 
-    // Run simulations until time limit or simulation count reached
+    // Computational loop for MCTS cycles
     while (
-      simulations < this.mcts.simulationsPerMove &&
-      Date.now() - startTime < timeLimit
+      completedSimulationsCount < this.mcts.simulationsPerMove &&
+      (Date.now() - searchStartTime) < searchTimeLimitMs
     ) {
-      let node = rootNode;
-      let board = this.copyBoardState(rootBoard);
-      let currentColor = color;
+      let currentNode = mctsRootNode;
+      let simulatedBoard = this.copyBoardState(rootBoardState);
+      let activeColor = aiColor;
 
-      // 1. SELECTION: Select node to expand
+      // 1. SELECTION: Descend the tree using UCB1 until an expandable or terminal node is reached
       while (
-        node.untriedMoves &&
-        node.untriedMoves.length === 0 &&
-        node.children.length > 0
+        currentNode.untriedMoves &&
+        currentNode.untriedMoves.length === 0 &&
+        currentNode.children.length > 0
       ) {
-        node = this.selectUCB1(node);
-        if (node.move) {
-          board = this.applyMoveToBoard(board, node.move);
-          currentColor = currentColor === "black" ? "red" : "black";
+        currentNode = this.selectUCB1(currentNode);
+        if (currentNode.move) {
+          simulatedBoard = this.applyMoveToBoard(simulatedBoard, currentNode.move);
+          activeColor = (activeColor === "black" ? "red" : "black");
         }
       }
 
-      // 2. EXPANSION: Add a child node
-      if (node.untriedMoves && node.untriedMoves.length > 0) {
-        const move = node.untriedMoves.pop();
-        board = this.applyMoveToBoard(board, move);
-        currentColor = currentColor === "black" ? "red" : "black";
-        const childNode = this.createMCTSNode(move, node, board);
-        childNode.playerJustMoved = currentColor === "black" ? "red" : "black";
-        childNode.untriedMoves = this.getAllMovesForBoard(board, currentColor);
-        node.children.push(childNode);
-        node = childNode;
+      // 2. EXPANSION: Create a new child node if move options are available
+      if (currentNode.untriedMoves && currentNode.untriedMoves.length > 0) {
+        const nextMoveOption = currentNode.untriedMoves.pop();
+        simulatedBoard = this.applyMoveToBoard(simulatedBoard, nextMoveOption);
+        activeColor = (activeColor === "black" ? "red" : "black");
+        
+        const newlyExpandedChild = this.createMCTSNode(nextMoveOption, currentNode, simulatedBoard);
+        newlyExpandedChild.playerWhoMovedToGetHere = (activeColor === "black" ? "red" : "black");
+        newlyExpandedChild.untriedMoves = this.getAllMovesForBoard(simulatedBoard, activeColor);
+        
+        currentNode.children.push(newlyExpandedChild);
+        currentNode = newlyExpandedChild;
       }
 
-      // 3. SIMULATION: Play out a random game
-      const result = this.simulateRandomPlayout(board, currentColor);
+      // 3. SIMULATION (ROLLOUT): Perform a random playout from the new state
+      const playoutWinner = this.simulateRandomPlayout(simulatedBoard, activeColor);
 
-      // 4. BACKPROPAGATION: Update nodes with result
-      while (node !== null) {
-        node.visits++;
-        // Update wins based on perspective
-        if (result === color) {
-          node.wins++;
-        } else if (result === "draw") {
-          node.wins += 0.5;
+      // 4. BACKPROPAGATION: Update statistics up the tree based on the playout result
+      let backpropNode = currentNode;
+      while (backpropNode !== null) {
+        backpropNode.visits++;
+        
+        // Reward nodes that lead to an AI win
+        if (playoutWinner === aiColor) {
+          backpropNode.wins++;
+        } else if (playoutWinner === "draw") {
+          backpropNode.wins += 0.5;
         }
-        node = node.parent;
+        backpropNode = backpropNode.parent;
       }
 
-      simulations++;
+      completedSimulationsCount++;
     }
 
-    const elapsedTime = Date.now() - startTime;
-    this.mcts.totalSimulations += simulations;
+    const searchDuration = Date.now() - searchStartTime;
+    this.mcts.totalSimulations += completedSimulationsCount;
 
-    // Select best move based on most visits (most robust)
-    return this.selectBestMCTSMove(rootNode);
+    // Final move selection based on visit count (robustness) or win rate
+    return this.selectBestMCTSMove(mctsRootNode);
   },
 
   // UCB1 selection formula
-  selectUCB1(node) {
-    const c = this.mcts.explorationConstant;
-    let bestScore = -Infinity;
-    let bestChild = null;
+  /**
+   * Upper Confidence Bound applied to Trees (UCB1) formula for node selection.
+   * Balances exploitation of high-win-rate nodes with exploration of less-visited ones.
+   * 
+   * @param {Object} parentNode - The node to select a child from
+   * @returns {Object} The selected child node
+   */
+  selectUCB1(parentNode) {
+    const explorationConstantK = this.mcts.explorationConstant;
+    let highestUCB1Score = -Infinity;
+    let selectedChildNode = null;
 
-    for (const child of node.children) {
-      // UCB1 formula: (wins/visits) + c * sqrt(ln(parent_visits) / visits)
-      const exploitation = child.wins / child.visits;
-      const exploration = c * Math.sqrt(Math.log(node.visits) / child.visits);
-      const ucb1Score = exploitation + exploration;
+    for (const childNode of parentNode.children) {
+      const exploitationTerm = childNode.wins / childNode.visits;
+      const explorationTerm = explorationConstantK * Math.sqrt(Math.log(parentNode.visits) / childNode.visits);
+      const combinedScore = exploitationTerm + explorationTerm;
 
-      if (ucb1Score > bestScore) {
-        bestScore = ucb1Score;
-        bestChild = child;
+      if (combinedScore > highestUCB1Score) {
+        highestUCB1Score = combinedScore;
+        selectedChildNode = childNode;
       }
     }
 
-    return bestChild;
+    return selectedChildNode;
   },
 
   // Select best move after MCTS completes
+  /**
+   * Select the best move from the root children after MCTS simulations conclude.
+   * Generally prefers the 'most robust' move (one with highest visit count).
+   * 
+   * @param {Object} rootNode - The root node of the MCTS tree
+   * @returns {Object} The selected best move
+   */
   selectBestMCTSMove(rootNode) {
-    let bestVisits = -1;
-    let bestMove = null;
-    let bestWinRate = -1;
+    let maxVisitsCount = -1;
+    let optimalMoveObj = null;
 
-    for (const child of rootNode.children) {
-      const winRate = child.visits > 0 ? (child.wins / child.visits) * 100 : 0;
-
-      // Select move with most visits (most robust)
-      if (child.visits > bestVisits) {
-        bestVisits = child.visits;
-        bestMove = child.move;
-        bestWinRate = winRate;
+    for (const childNode of rootNode.children) {
+      // Robust child selection (most visits)
+      if (childNode.visits > maxVisitsCount) {
+        maxVisitsCount = childNode.visits;
+        optimalMoveObj = childNode.move;
       }
     }
 
-    return bestMove;
+    return optimalMoveObj;
   },
 
   // Simulate a random playout from current position
-  simulateRandomPlayout(board, startColor) {
-    let currentBoard = this.copyBoardState(board);
-    let currentColor = startColor;
-    let depth = 0;
-    const maxDepth = this.mcts.maxDepth;
+  /**
+   * Perform a random playout (simulation) from a given board state to a terminal node or max depth.
+   * 
+   * @param {Array} boardState - The initial board state for the simulation
+   * @param {string} startPlayerColor - The color of the player whose turn it is
+   * @returns {string} The result of the simulation ('black', 'red', or 'draw')
+   */
+  simulateRandomPlayout(boardState, startPlayerColor) {
+    let currentSimBoard = this.copyBoardState(boardState);
+    let currentSimColor = startPlayerColor;
+    let simulationDepth = 0;
+    const maxSimulationDepthLimit = this.mcts.maxDepth;
 
-    while (depth < maxDepth) {
-      const moves = this.getAllMovesForBoard(currentBoard, currentColor);
+    while (simulationDepth < maxSimulationDepthLimit) {
+      const legalMovesInSim = this.getAllMovesForBoard(currentSimBoard, currentSimColor);
 
-      if (moves.length === 0) {
-        // No moves available - opponent wins
-        return currentColor === "black" ? "red" : "black";
+      if (legalMovesInSim.length === 0) {
+        // Terminal state reached: Current player has no moves and loses
+        return (currentSimColor === "black" ? "red" : "black");
       }
 
-      // Check for game end conditions
-      const gameState = this.checkGameEndOnBoard(currentBoard);
-      if (gameState !== "ongoing") {
-        return gameState;
+      // Check for predefined game end conditions (e.g., win/loss patterns)
+      const simulationGameStateTag = this.checkGameEndOnBoard(currentSimBoard);
+      if (simulationGameStateTag !== "ongoing") {
+        return simulationGameStateTag;
       }
 
-      // Select random move (with slight bias toward captures)
-      const move = this.selectSimulationMove(moves);
-      currentBoard = this.applyMoveToBoard(currentBoard, move);
+      // Select a move randomly, with a heuristic bias towards captures
+      const selectedSimMove = this.selectSimulationMove(legalMovesInSim);
+      currentSimBoard = this.applyMoveToBoard(currentSimBoard, selectedSimMove);
 
-      // Switch player
-      currentColor = currentColor === "black" ? "red" : "black";
-      depth++;
+      // Symmetrically swap the active simulation player
+      currentSimColor = (currentSimColor === "black" ? "red" : "black");
+      simulationDepth++;
     }
 
-    // If we reach max depth, evaluate position
-    return this.evaluateEndPosition(currentBoard);
+    // Reach depth limit: evaluate the final state using heuristics
+    return this.evaluateEndPosition(currentSimBoard);
   },
 
   // Select move during simulation (can add heuristics)
-  selectSimulationMove(moves) {
-    const captures = moves.filter((m) => m.isCapture);
+  /**
+   * Select a move from a list of legal moves during simulation.
+   * Implements a slight bias (70%) towards capture moves to simulate tactical awareness.
+   * 
+   * @param {Array} legalMovesList - Array of available move objects
+   * @returns {Object} The chosen move object
+   */
+  selectSimulationMove(legalMovesList) {
+    const availableCaptureMoves = legalMovesList.filter((m) => m.isCapture);
 
-    // 70% chance to select a capture if available
-    if (captures.length > 0 && Math.random() < 0.7) {
-      return captures[Math.floor(Math.random() * captures.length)];
+    // Prioritize captures to enhance the quality of simulation results
+    if (availableCaptureMoves.length > 0 && Math.random() < 0.7) {
+      const randomIndex = Math.floor(Math.random() * availableCaptureMoves.length);
+      return availableCaptureMoves[randomIndex];
     }
 
-    // Otherwise random move
-    return moves[Math.floor(Math.random() * moves.length)];
+    // Fallback to purely random selection
+    const randomIndex = Math.floor(Math.random() * legalMovesList.length);
+    return legalMovesList[randomIndex];
   },
 
   // Get all possible moves for a given board state
-  getAllMovesForBoard(board, color) {
-    const moves = [];
+  /**
+   * Generate all legal moves for a given color on a specific board state.
+   * Respects mandatory capture rules and forced multi-capture sequences.
+   * 
+   * @param {Array} boardArr - The board array
+   * @param {string} playerColorVal - The color to move
+   * @returns {Array} List of legal move objects
+   */
+  getAllMovesForBoard(boardArr, playerColorVal) {
+    const collectiveMovesList = [];
 
-    // Check if we are in a forced multi-capture sequence
+    // Handle forced multi-capture persistence from global state
     if (
-      typeof mustContinueCapture !== "undefined" &&
-      mustContinueCapture &&
+      typeof mustContinueCapture !== "undefined" && 
+      mustContinueCapture && 
       forcedCapturePiece
     ) {
-      // We must ONLY generate moves for the forced piece
-      const parent = forcedCapturePiece.parentElement;
-      if (parent) {
-        const r = parseInt(parent.dataset.row);
-        const c = parseInt(parent.dataset.col);
-        const piece = board[r][c];
-        console.log("getAllMovesForBoard: forced capture on board at", r, c, "snapshotPiece=", piece);
-        if (piece && piece.color === color) {
-          const moves = this.getMovesForPieceOnBoard(board, r, c, piece);
-          console.log("getAllMovesForBoard: returning", moves.length, "moves for forced piece");
-          return moves;
+      const pieceParentCell = forcedCapturePiece.parentElement;
+      if (pieceParentCell) {
+        const rowIdx = parseInt(pieceParentCell.dataset.row);
+        const colIdx = parseInt(pieceParentCell.dataset.col);
+        const targetPieceObj = boardArr[rowIdx][colIdx];
+        
+        if (targetPieceObj && targetPieceObj.color === playerColorVal) {
+          return this.getMovesForPieceOnBoard(boardArr, rowIdx, colIdx, targetPieceObj);
         }
       }
     }
 
-    for (let row = 0; row < BOARD_SIZE; row++) {
-      for (let col = 0; col < BOARD_SIZE; col++) {
-        const piece = board[row][col];
-        if (piece && piece.color === color) {
-          const pieceMoves = this.getMovesForPieceOnBoard(
-            board,
-            row,
-            col,
-            piece
-          );
-          moves.push(...pieceMoves);
+    // Iterate through the board to find all pieces belonging to the active player
+    for (let r = 0; r < BOARD_SIZE; r++) {
+      for (let c = 0; c < BOARD_SIZE; c++) {
+        const activePiece = boardArr[r][c];
+        if (activePiece && activePiece.color === playerColorVal) {
+          const individualPieceMoves = this.getMovesForPieceOnBoard(boardArr, r, c, activePiece);
+          collectiveMovesList.push(...individualPieceMoves);
         }
       }
     }
 
-    // Filter for captures if any exist (forced capture rule)
-    const captures = moves.filter((m) => m.isCapture);
+    // Enforce mandatory max capture rules (International Draughts style)
+    const filteredCaptureMoves = collectiveMovesList.filter((m) => m.isCapture);
 
-    if (captures.length > 0) {
-      // MANDATORY MAX CAPTURE ENFORCEMENT
-      // We must calculate the full potential of each capture to know which is "Max"
-      // because getMovesForPieceOnBoard only returns the first step.
-
-      let maxCaptures = 0;
-      const movesWithCounts = captures.map((move) => {
-        const count = this.calculateVirtualCapturePotential(board, move);
-        if (count > maxCaptures) maxCaptures = count;
-        return { move, count };
+    if (filteredCaptureMoves.length > 0) {
+      let absoluteMaxCaptureCount = 0;
+      
+      const captureOptionsWithDepth = filteredCaptureMoves.map((moveObj) => {
+        const projectedPotential = this.calculateVirtualCapturePotential(boardArr, moveObj);
+        if (projectedPotential > absoluteMaxCaptureCount) {
+          absoluteMaxCaptureCount = projectedPotential;
+        }
+        return { move: moveObj, chainLength: projectedPotential };
       });
 
-      // Strict filter: Only return moves that match the maximum capture count
-      const bestCaptures = movesWithCounts
-        .filter((item) => item.count === maxCaptures)
-        .map((item) => item.move);
-
-      return bestCaptures;
+      // Filter to return ONLY moves that achieve the maximum possible capture length
+      return captureOptionsWithDepth
+        .filter((option) => option.chainLength === absoluteMaxCaptureCount)
+        .map((option) => option.move);
     }
 
-    return moves;
+    return collectiveMovesList;
   },
+  /**
+   * Recursively calculate the maximum potential capture chain length for a move on a virtual board.
+   * 
+   * @param {Array} boardArr - The current board state array
+   * @param {Object} moveObj - The initial capture move to evaluate
+   * @returns {number} The maximum number of captures achievable in this sequence
+   */
+  calculateVirtualCapturePotential(boardArr, moveObj) {
+    if (!moveObj.isCapture) return 0;
 
-  // NEW: Recursive function to count total captures on a virtual board
-  calculateVirtualCapturePotential(board, move) {
-    if (!move.isCapture) return 0;
+    // Apply the initial step to a simulated board
+    const boardAfterStep = this.applyMoveToBoard(boardArr, moveObj);
+    let maximumAchievableChain = 0;
 
-    // Simulate this single step
-    const nextBoard = this.applyMoveToBoard(board, move);
-    let maxChain = 0;
-
-    // Check if we can continue capturing from the new position
-    // The piece is now at move.toRow, move.toCol
-    const piece = nextBoard[move.toRow][move.toCol];
-    if (piece) {
-      // Find possible next steps
-      const nextMoves = this.getMovesForPieceOnBoard(
-        nextBoard,
-        move.toRow,
-        move.toCol,
-        piece
+    // Identify any available jump-captures from the new position
+    const pieceAtDest = boardAfterStep[moveObj.toRow][moveObj.toCol];
+    if (pieceAtDest) {
+      const subsequentMoveOptions = this.getMovesForPieceOnBoard(
+        boardAfterStep,
+        moveObj.toRow,
+        moveObj.toCol,
+        pieceAtDest
       );
-      const nextCaptures = nextMoves.filter((m) => m.isCapture);
+      const subsequentCaptures = subsequentMoveOptions.filter((m) => m.isCapture);
 
-      if (nextCaptures.length > 0) {
-        for (const nextMove of nextCaptures) {
-          const chain = this.calculateVirtualCapturePotential(
-            nextBoard,
-            nextMove
+      if (subsequentCaptures.length > 0) {
+        for (const nextCaptureMove of subsequentCaptures) {
+          const currentChainLength = this.calculateVirtualCapturePotential(
+            boardAfterStep,
+            nextCaptureMove
           );
-          if (chain > maxChain) maxChain = chain;
+          if (currentChainLength > maximumAchievableChain) {
+            maximumAchievableChain = currentChainLength;
+          }
         }
       }
     }
 
-    return 1 + maxChain;
+    return 1 + maximumAchievableChain;
   },
 
-  // Get moves for a specific piece on a board state
-  getMovesForPieceOnBoard(board, row, col, piece) {
-    const moves = [];
-    const isKing = piece.king;
-    const color = piece.color;
+  /**
+   * Calculate all available moves (jumps and steps) for a piece on a virtual board state.
+   * 
+   * @param {Array} boardArr - The board array state
+   * @param {number} r - Piece row
+   * @param {number} c - Piece column
+   * @param {Object} pieceObj - The piece data object
+   * @returns {Array} List of move objects
+   */
+  getMovesForPieceOnBoard(boardArr, r, c, pieceObj) {
+    const validMovesList = [];
+    const isKingPiece = pieceObj.king;
+    const pieceColorVal = pieceObj.color;
 
-    // International Checkers: All pieces can capture forwards and backwards
-    const captureDirections = [
-      [-1, -1],
-      [-1, 1],
-      [1, -1],
-      [1, 1],
-    ];
+    // Standard directions for captures (all pieces) and moves (Kings)
+    const tacticalDirections = [[-1, -1], [-1, 1], [1, -1], [1, 1]];
 
-    // Regular movement directions
-    let moveDirections;
-    if (isKing) {
-      moveDirections = [
-        [-1, -1],
-        [-1, 1],
-        [1, -1],
-        [1, 1],
-      ];
-    } else if (color === "red") {
-      moveDirections = [
-        [-1, -1],
-        [-1, 1],
-      ];
+    // Determine movement directions for regular pieces
+    let passiveDirections;
+    if (isKingPiece) {
+      passiveDirections = tacticalDirections;
+    } else if (pieceColorVal === "red") {
+      passiveDirections = [[-1, -1], [-1, 1]]; // Red moves "up"
     } else {
-      moveDirections = [
-        [1, -1],
-        [1, 1],
-      ];
+      passiveDirections = [[1, -1], [1, 1]]; // Black moves "down"
     }
 
-    // 1. GENERATE CAPTURES (Critical for AI)
-    if (isKing) {
-      // Flying King Capture Logic
-      for (const [dRow, dCol] of captureDirections) {
-        let foundEnemy = false;
-        let capturedR = -1;
-        let capturedC = -1;
+    // 1. GENERATE CAPTURE MOVES (PRIORITY)
+    if (isKingPiece) {
+      // Long-range "Flying King" capture logic
+      for (const [deltaRow, deltaCol] of tacticalDirections) {
+        let hasEncounteredEnemy = false;
+        let victimRowIdx = -1;
+        let victimColIdx = -1;
 
-        for (let i = 1; i < BOARD_SIZE; i++) {
-          const r = row + dRow * i;
-          const c = col + dCol * i;
+        for (let dist = 1; dist < BOARD_SIZE; dist++) {
+          const targetRowIdx = r + deltaRow * dist;
+          const targetColIdx = c + deltaCol * dist;
 
-          if (r < 0 || r >= BOARD_SIZE || c < 0 || c >= BOARD_SIZE) break;
+          if (targetRowIdx < 0 || targetRowIdx >= BOARD_SIZE || 
+              targetColIdx < 0 || targetColIdx >= BOARD_SIZE) break;
 
-          const p = board[r][c];
+          const cellPiece = boardArr[targetRowIdx][targetColIdx];
 
-          if (!foundEnemy) {
-            if (p) {
-              if (p.color === color) break; // Blocked by self
-              foundEnemy = true;
-              capturedR = r;
-              capturedC = c;
+          if (!hasEncounteredEnemy) {
+            if (cellPiece) {
+              if (cellPiece.color === pieceColorVal) break; // Path blocked by friendly piece
+              hasEncounteredEnemy = true;
+              victimRowIdx = targetRowIdx;
+              victimColIdx = targetColIdx;
             }
           } else {
-            if (p) break; // Blocked by second piece (cannot jump two connected)
+            if (cellPiece) break; // Cannot jump over two pieces
 
-            // Valid landing spot found!
-            moves.push({
-              fromRow: row,
-              fromCol: col,
-              toRow: r,
-              toCol: c,
+            // Found a valid landing square behind the victim
+            validMovesList.push({
+              fromRow: r, fromCol: c,
+              toRow: targetRowIdx, toCol: targetColIdx,
               isCapture: true,
-              capturedRow: capturedR,
-              capturedCol: capturedC,
-              king: isKing,
-              color: color,
+              capturedRow: victimRowIdx, capturedCol: victimColIdx,
+              king: isKingPiece, color: pieceColorVal,
             });
           }
         }
       }
     } else {
-      // Regular Piece Capture (Forward & Backward allowed)
-      for (const [dRow, dCol] of captureDirections) {
-        const midR = row + dRow;
-        const midC = col + dCol;
-        const destR = row + dRow * 2;
-        const destC = col + dCol * 2;
+      // Regular Pawn capture logic
+      for (const [deltaRow, deltaCol] of tacticalDirections) {
+        const victimRowIdx = r + deltaRow;
+        const victimColIdx = c + deltaCol;
+        const landingRowIdx = r + deltaRow * 2;
+        const landingColIdx = c + deltaCol * 2;
 
         if (
-          destR >= 0 &&
-          destR < BOARD_SIZE &&
-          destC >= 0 &&
-          destC < BOARD_SIZE
+          landingRowIdx >= 0 && landingRowIdx < BOARD_SIZE &&
+          landingColIdx >= 0 && landingColIdx < BOARD_SIZE
         ) {
-          const midP = board[midR][midC];
-          if (midP && midP.color !== color && !board[destR][destC]) {
-            moves.push({
-              fromRow: row,
-              fromCol: col,
-              toRow: destR,
-              toCol: destC,
+          const victimPiece = boardArr[victimRowIdx][victimColIdx];
+          const landingCell = boardArr[landingRowIdx][landingColIdx];
+          
+          if (victimPiece && victimPiece.color !== pieceColorVal && !landingCell) {
+            validMovesList.push({
+              fromRow: r, fromCol: c,
+              toRow: landingRowIdx, toCol: landingColIdx,
               isCapture: true,
-              capturedRow: midR,
-              capturedCol: midC,
-              king: isKing,
-              color: color,
+              capturedRow: victimRowIdx, capturedCol: victimColIdx,
+              king: isKingPiece, color: pieceColorVal,
             });
           }
         }
       }
     }
 
-    // 2. GENERATE REGULAR MOVES (Only if no captures? Normally yes, but Minimax can handle sort)
-    // Note: Forced capture rule is handled in getAllMovesForBoard filter.
+    // 2. GENERATE NON-CAPTURE (PASSIVE) MOVES
+    if (isKingPiece) {
+      // Long-range flying movement
+      for (const [deltaRow, deltaCol] of passiveDirections) {
+        for (let dist = 1; dist < BOARD_SIZE; dist++) {
+          const targetRowIdx = r + deltaRow * dist;
+          const targetColIdx = c + deltaCol * dist;
+          
+          if (targetRowIdx < 0 || targetRowIdx >= BOARD_SIZE || 
+              targetColIdx < 0 || targetColIdx >= BOARD_SIZE) break;
+          
+          if (boardArr[targetRowIdx][targetColIdx]) break; // Path blocked
 
-    if (isKing) {
-      for (const [dRow, dCol] of moveDirections) {
-        for (let i = 1; i < BOARD_SIZE; i++) {
-          const newRow = row + dRow * i;
-          const newCol = col + dCol * i;
-          if (
-            newRow < 0 ||
-            newRow >= BOARD_SIZE ||
-            newCol < 0 ||
-            newCol >= BOARD_SIZE
-          )
-            break;
-          if (board[newRow][newCol]) break;
-
-          moves.push({
-            fromRow: row,
-            fromCol: col,
-            toRow: newRow,
-            toCol: newCol,
+          validMovesList.push({
+            fromRow: r, fromCol: c,
+            toRow: targetRowIdx, toCol: targetColIdx,
             isCapture: false,
-            king: isKing,
-            color: color,
+            king: isKingPiece, color: pieceColorVal,
           });
         }
       }
     } else {
-      for (const [dRow, dCol] of moveDirections) {
-        const newRow = row + dRow;
-        const newCol = col + dCol;
+      // Regular Pawn stepping
+      for (const [deltaRow, deltaCol] of passiveDirections) {
+        const targetRowIdx = r + deltaRow;
+        const targetColIdx = c + deltaCol;
+        
         if (
-          newRow >= 0 &&
-          newRow < BOARD_SIZE &&
-          newCol >= 0 &&
-          newCol < BOARD_SIZE &&
-          !board[newRow][newCol]
+          targetRowIdx >= 0 && targetRowIdx < BOARD_SIZE &&
+          targetColIdx >= 0 && targetColIdx < BOARD_SIZE &&
+          !boardArr[targetRowIdx][targetColIdx]
         ) {
-          moves.push({
-            fromRow: row,
-            fromCol: col,
-            toRow: newRow,
-            toCol: newCol,
+          validMovesList.push({
+            fromRow: r, fromCol: c,
+            toRow: targetRowIdx, toCol: targetColIdx,
             isCapture: false,
-            king: isKing,
-            color: color,
+            king: isKingPiece, color: pieceColorVal,
           });
         }
       }
     }
-    return moves;
+
+    return validMovesList;
   },
 
-  // Apply a move to a board state (returns new board)
-  applyMoveToBoard(board, move) {
-    const newBoard = this.copyBoardState(board);
+  /**
+   * Apply a move to a board array state and return a new updated board state.
+   * Handles piece displacement, capture removal, and King promotion.
+   * 
+   * @param {Array} boardArr - The current board array
+   * @param {Object} moveObj - The move to apply
+   * @returns {Array} The new board state array
+   */
+  applyMoveToBoard(boardArr, moveObj) {
+    const updatedBoard = this.copyBoardState(boardArr);
 
-    // Move the piece
-    // Note: We use the existing piece data from the board, not from the move object
-    const movingPiece = newBoard[move.fromRow][move.fromCol];
-    newBoard[move.toRow][move.toCol] = movingPiece;
-    newBoard[move.fromRow][move.fromCol] = null;
+    // Relocate the moving piece
+    const movingPieceData = updatedBoard[moveObj.fromRow][moveObj.fromCol];
+    updatedBoard[moveObj.toRow][moveObj.toCol] = movingPieceData;
+    updatedBoard[moveObj.fromRow][moveObj.fromCol] = null;
 
-    // Handle captures (multi-capture support)
-    if (move.isCapture) {
-      if (move.capturedPieces && Array.isArray(move.capturedPieces)) {
-        for (const pieceKey of move.capturedPieces) {
-          const [r, c] = pieceKey.split(",").map(Number);
-          newBoard[r][c] = null;
+    // Remove captured pieces from the board
+    if (moveObj.isCapture) {
+      if (moveObj.capturedPieces && Array.isArray(moveObj.capturedPieces)) {
+        for (const coordKey of moveObj.capturedPieces) {
+          const [victimRow, victimCol] = coordKey.split(",").map(Number);
+          updatedBoard[victimRow][victimCol] = null;
         }
       } else if (
-        move.capturedRow !== undefined &&
-        move.capturedCol !== undefined
+        moveObj.capturedRow !== undefined &&
+        moveObj.capturedCol !== undefined
       ) {
-        newBoard[move.capturedRow][move.capturedCol] = null;
+        updatedBoard[moveObj.capturedRow][moveObj.capturedCol] = null;
       }
     }
 
-    // Handle king promotion
-    // Black promotes at row 9 (BOARD_SIZE - 1), Red promotes at row 0
-    if (movingPiece) {
-      if (
-        move.toRow === 0 &&
-        movingPiece.color === "red" &&
-        !movingPiece.king
-      ) {
-        movingPiece.king = true;
-      } else if (
-        move.toRow === BOARD_SIZE - 1 &&
-        movingPiece.color === "black" &&
-        !movingPiece.king
-      ) {
-        movingPiece.king = true;
+    // Handle potential King promotion
+    if (movingPieceData) {
+      const isBlackPromoting = (moveObj.toRow === BOARD_SIZE - 1 && movingPieceData.color === "black");
+      const isRedPromoting = (moveObj.toRow === 0 && movingPieceData.color === "red");
+      
+      if ((isBlackPromoting || isRedPromoting) && !movingPieceData.king) {
+        movingPieceData.king = true;
       }
     }
 
-    return newBoard;
+    return updatedBoard;
   },
 
-  // Copy board state
-  copyBoardState(board) {
-    const newBoard = [];
-    for (let i = 0; i < BOARD_SIZE; i++) {
-      newBoard[i] = [];
-      for (let j = 0; j < BOARD_SIZE; j++) {
-        if (board[i][j]) {
-          newBoard[i][j] = { ...board[i][j] };
+  /**
+   * Create a deep copy of a board state array.
+   * 
+   * @param {Array} sourceBoard - The board to clone
+   * @returns {Array} The cloned board array
+   */
+  copyBoardState(sourceBoard) {
+    const clonedBoardArr = [];
+    for (let r = 0; r < BOARD_SIZE; r++) {
+      clonedBoardArr[r] = [];
+      for (let c = 0; c < BOARD_SIZE; c++) {
+        if (sourceBoard[r][c]) {
+          clonedBoardArr[r][c] = { ...sourceBoard[r][c] };
         } else {
-          newBoard[i][j] = null;
+          clonedBoardArr[r][c] = null;
         }
       }
     }
-    return newBoard;
+    return clonedBoardArr;
   },
 
-  // Get current board state from DOM
+  /**
+   * Scrape the current visual DOM state of the board and convert it into a data array.
+   * 
+   * @returns {Array} 2D array representing the current game board
+   */
   getCurrentBoardState() {
-    const board = [];
-    for (let row = 0; row < BOARD_SIZE; row++) {
-      board[row] = [];
-      for (let col = 0; col < BOARD_SIZE; col++) {
-        const piece = this.getPieceAt(row, col);
-        if (piece) {
-          board[row][col] = {
-            color: piece.dataset.color,
-            king: piece.dataset.king === "true",
+    const virtualBoardArr = [];
+    for (let r = 0; r < BOARD_SIZE; r++) {
+      virtualBoardArr[r] = [];
+      for (let c = 0; c < BOARD_SIZE; c++) {
+        const domPieceElement = this.getPieceAt(r, c);
+        if (domPieceElement) {
+          virtualBoardArr[r][c] = {
+            color: domPieceElement.dataset.color,
+            king: domPieceElement.dataset.king === "true",
           };
         } else {
-          board[row][col] = null;
+          virtualBoardArr[r][c] = null;
         }
       }
     }
-    return board;
+    return virtualBoardArr;
   },
 
-  // Check if game has ended on a board state
-  checkGameEndOnBoard(board) {
-    let blackPieces = 0;
-    let redPieces = 0;
-    let blackKings = 0;
-    let redKings = 0;
+  /**
+   * Determine if a game has reached a terminal state (win/loss/draw) on a specific board.
+   * 
+   * @param {Array} boardArr - The board state to evaluate
+   * @returns {string} 'ongoing', 'black', 'red', or 'draw'
+   */
+  checkGameEndOnBoard(boardArr) {
+    let blackRemainingCount = 0;
+    let redRemainingCount = 0;
+    let blackKingCount = 0;
+    let redKingCount = 0;
 
-    for (let row = 0; row < BOARD_SIZE; row++) {
-      for (let col = 0; col < BOARD_SIZE; col++) {
-        if (board[row][col]) {
-          const p = board[row][col];
-          if (p.color === "black") {
-            blackPieces++;
-            if (p.king) blackKings++;
+    for (let r = 0; r < BOARD_SIZE; r++) {
+      for (let c = 0; c < BOARD_SIZE; c++) {
+        const pieceObj = boardArr[r][c];
+        if (pieceObj) {
+          if (pieceObj.color === "black") {
+            blackRemainingCount++;
+            if (pieceObj.king) blackKingCount++;
           } else {
-            redPieces++;
-            if (p.king) redKings++;
+            redRemainingCount++;
+            if (pieceObj.king) redKingCount++;
           }
         }
       }
     }
 
-    if (blackPieces === 0) return "red";
-    if (redPieces === 0) return "black";
+    if (blackRemainingCount === 0) return "red";
+    if (redRemainingCount === 0) return "black";
 
-    // Draw condition: 1 King vs 1 King
-    if (
-      blackPieces === 1 &&
-      blackKings === 1 &&
-      redPieces === 1 &&
-      redKings === 1
-    ) {
+    // Standard Draw Condition: Final duel of lone Kings
+    if (blackRemainingCount === 1 && blackKingCount === 1 && 
+        redRemainingCount === 1 && redKingCount === 1) {
       return "draw";
     }
 
     return "ongoing";
   },
 
-  // Evaluate final position for simulation
-  evaluateEndPosition(board) {
-    let blackScore = 0;
-    let redScore = 0;
+  /**
+   * Heuristic fallback for evaluating a non-terminal endgame state in simulations.
+   * Compares weighted material balance.
+   * 
+   * @param {Array} boardArr - The board to evaluate
+   * @returns {string} 'black', 'red', or 'draw'
+   */
+  evaluateEndPosition(boardArr) {
+    let blackEvaluationVal = 0;
+    let redEvaluationVal = 0;
 
-    for (let row = 0; row < BOARD_SIZE; row++) {
-      for (let col = 0; col < BOARD_SIZE; col++) {
-        const piece = board[row][col];
-        if (piece) {
-          const value = piece.king ? 3 : 1;
-          if (piece.color === "black") {
-            blackScore += value;
+    for (let r = 0; r < BOARD_SIZE; r++) {
+      for (let c = 0; c < BOARD_SIZE; c++) {
+        const pieceObj = boardArr[r][c];
+        if (pieceObj) {
+          const pieceVal = pieceObj.king ? 3 : 1;
+          if (pieceObj.color === "black") {
+            blackEvaluationVal += pieceVal;
           } else {
-            redScore += value;
+            redEvaluationVal += pieceVal;
           }
         }
       }
     }
 
-    if (blackScore > redScore * 1.5) return "black";
-    if (redScore > blackScore * 1.5) return "red";
+    // Determine winner based on a significant material advantage threshold
+    if (blackEvaluationVal > redEvaluationVal * 1.5) return "black";
+    if (redEvaluationVal > blackEvaluationVal * 1.5) return "red";
     return "draw";
   },
 
@@ -5583,16 +5711,32 @@ const enhancedAI = {
   // EARLY EXIT STRATEGY (Fast rejection for obviously bad moves)
   // ═══════════════════════════════════════════════════════════════════
 
-  shouldRejectMove(move, board = null) {
-    const currentBoard = board || this.getCurrentBoardState();
+  /**
+   * Fast-rejection filter for obviously detrimental moves.
+   * Prunes moves that lead to immediate suicide or severe structural damage.
+   * 
+   * @param {Object} moveObj - The move to test
+   * @param {Array|null} optionalBoardArr - Optional board override
+   * @returns {boolean} True if the move is clearly bad and should be ignored
+   */
+  shouldRejectMove(moveObj, optionalBoardArr = null) {
+    const activeBoardArr = optionalBoardArr || this.getCurrentBoardState();
     
-    if (!move.isCapture && this.isPieceUnderAttack(this.applyMoveToBoard(currentBoard, move), move.toRow, move.toCol, "black")) return true;
+    // Reject moves that land into a direct capture trap (non-trading)
+    if (!moveObj.isCapture && this.isPieceUnderAttack(this.applyMoveToBoard(activeBoardArr, moveObj), moveObj.toRow, moveObj.toCol, "black")) {
+      return true;
+    }
     
-    const totalPieces = this.countPieces(currentBoard);
-    if (move.fromRow <= 1 && move.toRow > 1 && !move.isCapture && totalPieces > 12) return true;
+    // Reject premature back-rank abandonment in early/mid game
+    const totalPieceCount = this.countPieces(activeBoardArr);
+    if (moveObj.fromRow <= 1 && moveObj.toRow > 1 && !moveObj.isCapture && totalPieceCount > 12) {
+      return true;
+    }
     
-    if (this.wouldIsolatePiece(move) && !move.isCapture) return true;
-    if (this.createsOpponentChain(move)) return true;
+    // Reject moves that isolate pieces or enable large opponent chains
+    if (this.wouldIsolatePiece(moveObj) && !moveObj.isCapture) return true;
+    if (this.createsOpponentChain(moveObj)) return true;
+    
     return false;
   },
   
@@ -5625,393 +5769,412 @@ const enhancedAI = {
 
   // ==================== END MCTS ====================
 
+  /**
+   * Main entry point for the AI to find its next best move.
+   * Initializes search metadata, adapts weights, and triggers the iterative deepening search.
+   * Fallbacks to safe-move evaluation if the search result looks risky.
+   * 
+   * @returns {Promise<Object|null>} The selected move object
+   */
   async findBestMove() {
     try {
       this.initZobrist();
       this.transpositionTable.clear();
       this.historyTable = {};
-      this.killerMoves = Array(20)
-        .fill(null)
-        .map(() => []);
+      this.killerMoves = Array(20).fill(null).map(() => []);
+      
       this.nodesCached = 0;
       this.cacheHits = 0;
       this.totalNodes = 0;
 
-      const currentBoard = this.getCurrentBoardState();
-      this.adaptWeights(); // CRITICAL: Populate this.weights from baseWeights
-      let moves = this.getAllMovesForBoard(currentBoard, "black");
+      const currentBoardArr = this.getCurrentBoardState();
+      this.adaptWeights(); // Update strategic weights based on current state
 
-      // PHASE 3 OPTIMIZATION: Early exit - filter obviously bad moves
-      // Temporarily disabled due to edge case - using all moves
-      const movesToEvaluate = moves;
+      const rawLegalMoves = this.getAllMovesForBoard(currentBoardArr, "black");
+      if (rawLegalMoves.length === 1) return rawLegalMoves[0];
 
-      if (movesToEvaluate.length === 1) {
-        return movesToEvaluate[0];
+      // SEARCH PHASE: Iterative Deepening with Alpha-Beta
+      let timeLimit = 3500;
+      let boardForAnalysis = currentBoardArr;
+      
+      // Endgame refinement: Increase search precision when pieces are low
+      let piecesLeft = 0;
+      for (let r = 0; r < BOARD_SIZE; r++) {
+        for (let c = 0; c < BOARD_SIZE; c++) if (boardForAnalysis[r][c]) piecesLeft++;
       }
+      
+      if (piecesLeft <= 10) timeLimit = 6000;
+      else if (piecesLeft <= 16) timeLimit = 4500;
 
-      const bestMove = await this.iterativeDeepeningSearch(
-        currentBoard,
+      const bestMoveFromSearch = await this.iterativeDeepeningSearch(
+        currentBoardArr,
         "black",
-        3500, // Increased time limit for higher challenge
-        movesToEvaluate
+        timeLimit,
+        rawLegalMoves
       );
 
-      if (bestMove) {
-        const testBoard = this.applyMoveToBoard(currentBoard, bestMove);
-        const isSafe = !this.isPieceUnderAttack(
-          testBoard,
-          bestMove.toRow,
-          bestMove.toCol,
-          "black"
-        );
+      if (bestMoveFromSearch) {
+        // ENHANCED SAFETY VERIFICATION: Check for total material preservation
+        const initialMaterial = this.calculateTotalMaterial(currentBoardArr, "black");
+        const projectedBoard = this.applyMoveToBoard(currentBoardArr, bestMoveFromSearch);
+        
+        // Use a deeper 1-ply tactical check for the opponent's response
+        const opponentColor = "red";
+        const opponentResponses = this.getAllMovesForBoard(projectedBoard, opponentColor);
+        
+        let fatalContinuationFound = false;
+        for (const response of opponentResponses) {
+          const finalState = this.applyMoveToBoard(projectedBoard, response);
+          const finalMaterial = this.calculateTotalMaterial(finalState, "black");
+          
+          if (finalMaterial < initialMaterial) {
+            fatalContinuationFound = true;
+            break;
+          }
+        }
 
-        if (!isSafe) {
-          // Re-evaluate ONLY safe moves and pick the best one
-          let bestSafeMove = null;
-          let maxSafeScore = -Infinity;
+        if (fatalContinuationFound && !bestMoveFromSearch.isCapture) {
+          // If search result leads to material loss, manually pick the safest possible position
+          let optimalSafeMove = null;
+          let maxSafeHeuristicScore = -Infinity;
 
-          for (const m of movesToEvaluate) {
-            // Yield to UI thread every move evaluation
+          for (const moveOption of rawLegalMoves) {
             await new Promise(resolve => setTimeout(resolve, 0));
             
-            const tb = this.applyMoveToBoard(currentBoard, m);
-            if (
-              m.isCapture ||
-              !this.isPieceUnderAttack(tb, m.toRow, m.toCol, "black")
-            ) {
-              const s = this.evaluatePositionEnhanced(tb, "black");
-              if (s > maxSafeScore) {
-                maxSafeScore = s;
-                bestSafeMove = m;
-                bestSafeMove.score = s; // Attach score for learning
+            // A move is considered "defensively sound" if it doesn't immediately lead to piece loss
+            const pBoard = this.applyMoveToBoard(currentBoardArr, moveOption);
+            const oMoves = this.getAllMovesForBoard(pBoard, opponentColor);
+            
+            let isSafe = true;
+            for (const oMove of oMoves) {
+              const fState = this.applyMoveToBoard(pBoard, oMove);
+              if (this.calculateTotalMaterial(fState, "black") < initialMaterial) {
+                isSafe = false;
+                break;
+              }
+            }
+            
+            if (isSafe || moveOption.isCapture) {
+              const score = this.evaluatePositionEnhanced(pBoard, "black");
+              if (score > maxSafeHeuristicScore) {
+                maxSafeHeuristicScore = score;
+                optimalSafeMove = moveOption;
               }
             }
           }
 
-          if (bestSafeMove) {
-            return bestSafeMove;
-          }
+          if (optimalSafeMove) return optimalSafeMove;
         }
 
-        return bestMove;
+        return bestMoveFromSearch;
       } else {
-        // If iterativeDeepeningSearch returns null, fall back to a simple move
-        return movesToEvaluate.length > 0 ? movesToEvaluate[0] : null;
+        // Fallback if search fails
+        return rawLegalMoves.length > 0 ? rawLegalMoves[0] : null;
       }
-    } catch (err) {
-      const board = this.getCurrentBoardState(); // Changed from getBoardState() to getCurrentBoardState()
-      let moves = this.getAllMovesForBoard(board, "black");
-      return moves.length > 0 ? moves[0] : null;
+    } catch (searchError) {
+      console.error("AI Search Error:", searchError);
+      const fallbackBoard = this.getCurrentBoardState();
+      const fallbackMoves = this.getAllMovesForBoard(fallbackBoard, "black");
+      return fallbackMoves.length > 0 ? fallbackMoves[0] : null;
     }
   },
 
-  async iterativeDeepeningSearch(board, color, timeLimit, searchMoves = null) {
-    const startTime = Date.now();
-    let bestMove = null;
-    let depth = 1;
-    const maxDepth = 20; // Increased max depth thanks to TT and Pruning
+  /**
+   * @param {Array|null} startingMovesList - Optional predefined move list
+   * @returns {Promise<Object|null>} The best move found
+   */
+  async iterativeDeepeningSearch(boardState, playerColor, searchTimeLimit, startingMovesList = null) {
+    const searchStartTime = Date.now();
+    let globalBestMove = null;
+    let currentSearchDepth = 1;
+    const absoluteMaxDepth = 20;
 
-    let moves = searchMoves || this.getAllMovesForBoard(board, color);
-    if (moves.length === 0) return null;
-    if (moves.length === 1) return moves[0];
+    let movesToSearch = startingMovesList || this.getAllMovesForBoard(boardState, playerColor);
+    if (movesToSearch.length === 0) return null;
+    if (movesToSearch.length === 1) return movesToSearch[0];
 
-    const captures = moves.filter((m) => m.isCapture);
+    // Priority move selection (captures take precedence)
+    const tacticalCaptures = movesToSearch.filter((m) => m.isCapture);
+    const primaryCandidateList = (tacticalCaptures.length > 0) ? tacticalCaptures : movesToSearch;
+    if (primaryCandidateList.length === 1) return primaryCandidateList[0];
 
-    const candidateMoves = captures.length > 0 ? captures : moves;
-    if (candidateMoves.length === 1) return candidateMoves[0];
+    while ((Date.now() - searchStartTime) < searchTimeLimit && currentSearchDepth <= absoluteMaxDepth) {
+      this.currentSearchDepth = currentSearchDepth;
+      let alphaVal = -1000000;
+      let betaVal = 1000000;
 
-    while (Date.now() - startTime < timeLimit && depth <= maxDepth) {
-      this.currentSearchDepth = depth;
-      let alpha = -1000000;
-      let beta = 1000000;
-
-      // Re-sort moves based on previous best result and captures
-      candidateMoves.sort((a, b) => {
+      // Move Re-ordering: Best move from previous iteration and captures go first
+      primaryCandidateList.sort((moveA, moveB) => {
         if (
-          bestMove &&
-          a.fromRow === bestMove.fromRow &&
-          a.toRow === bestMove.toRow &&
-          a.fromCol === bestMove.fromCol &&
-          a.toCol === bestMove.toCol
-        )
-          return -1;
-        if (b.isCapture && !a.isCapture) return 1;
-        if (a.isCapture && !b.isCapture) return -1;
+          globalBestMove &&
+          moveA.fromRow === globalBestMove.fromRow && moveA.toRow === globalBestMove.toRow &&
+          moveA.fromCol === globalBestMove.fromCol && moveA.toCol === globalBestMove.toCol
+        ) return -1;
+        
+        if (moveB.isCapture && !moveA.isCapture) return 1;
+        if (moveA.isCapture && !moveB.isCapture) return -1;
         return 0;
       });
 
-      let currentBestMove = null;
-      let currentBestScore = -Infinity;
+      let iterationBestMove = null;
+      let iterationBestScore = -Infinity;
 
-      for (const move of candidateMoves) {
-        const resultBoard = this.applyMoveToBoard(board, move);
-        const score = -this.minimax(
-          resultBoard,
-          depth - 1,
-          -beta,
-          -alpha,
-          color === "black" ? "red" : "black"
+      for (const currentMove of primaryCandidateList) {
+        const projectedBoardArr = this.applyMoveToBoard(boardState, currentMove);
+        const searchScoreValue = -this.minimax(
+          projectedBoardArr,
+          currentSearchDepth - 1,
+          -betaVal,
+          -alphaVal,
+          (playerColor === "black" ? "red" : "black")
         );
 
-        // Apply move-specific learning bonus at the root level
-        const learningBonus = this.evaluateLearnedPatterns(move);
-        const finalScore = score + learningBonus;
+        // Apply heuristic pattern-based learning adjustments
+        const patternAdjustBonus = this.evaluateLearnedPatterns(currentMove);
+        const adjustedFinalScore = searchScoreValue + patternAdjustBonus;
 
-        if (finalScore > currentBestScore) {
-          currentBestScore = finalScore;
-          currentBestMove = move;
+        if (adjustedFinalScore > iterationBestScore) {
+          iterationBestScore = adjustedFinalScore;
+          iterationBestMove = currentMove;
         }
 
-        alpha = Math.max(alpha, finalScore);
-        if (Date.now() - startTime > timeLimit) break;
+        alphaVal = Math.max(alphaVal, adjustedFinalScore);
+        if ((Date.now() - searchStartTime) > searchTimeLimit) break;
       }
 
-      if (Date.now() - startTime <= timeLimit) {
-        bestMove = currentBestMove;
-        if (bestMove) bestMove.score = currentBestScore; // Attach score for learning
-        depth++;
+      if ((Date.now() - searchStartTime) <= searchTimeLimit) {
+        globalBestMove = iterationBestMove;
+        if (globalBestMove) globalBestMove.score = iterationBestScore;
+        currentSearchDepth++;
       }
     }
 
-    return bestMove;
+    return globalBestMove;
   },
 
-  // MINIMAX with Alpha-Beta Pruning and Transposition Table
-  minimax(board, depth, alpha, beta, color) {
-    const originalAlpha = alpha;
-    const hash = this.getZobristHash(board, color);
+  /**
+   * Recursive Minimax search with Alpha-Beta Pruning, Transposition Table, and Tactical Enhancements.
+   * Explores the game tree to determine the optimal score for the current player.
+   * 
+   * @param {Array} boardArr - The board state array
+   * @param {number} depthLimit - Remaining levels to search
+   * @param {number} alphaVal - The lower bound of the score range
+   * @param {number} betaVal - The upper bound of the score range
+   * @param {string} activeColor - The color of the player whose turn it is
+   * @returns {number} The evaluation score of the position
+   */
+  minimax(boardArr, depthLimit, alphaVal, betaVal, activeColor) {
+    const originalAlphaVal = alphaVal;
+    const boardHashKey = this.getZobristHash(boardArr, activeColor);
 
     this.totalNodes++;
 
-    // 1. TT Lookup
-    if (this.transpositionTable.has(hash)) {
-      const entry = this.transpositionTable.get(hash);
-      if (entry.depth >= depth) {
+    // 1. TRANSPOSITION TABLE LOOKUP (Optimization)
+    if (this.transpositionTable.has(boardHashKey)) {
+      const cachedEntry = this.transpositionTable.get(boardHashKey);
+      if (cachedEntry.depth >= depthLimit) {
         this.cacheHits++;
-        if (entry.type === 0) return entry.score; // EXACT
-        if (entry.type === 1 && entry.score >= beta) return beta; // BETA (Lower bound)
-        if (entry.type === 2 && entry.score <= alpha) return alpha; // ALPHA (Upper bound)
+        if (cachedEntry.type === 0) return cachedEntry.score; // Exact score found
+        if (cachedEntry.type === 1 && cachedEntry.score >= betaVal) return betaVal; // Lower bound (Beta)
+        if (cachedEntry.type === 2 && cachedEntry.score <= alphaVal) return alphaVal; // Upper bound (Alpha)
       }
     }
 
     // --- NULL MOVE PRUNING ---
-    // If we're at a decent depth and not in a tactical state, check if passing is safe.
-    if (depth >= 3 && !this.isInEndgame(board)) {
-      // We simulate a side switch (null move)
-      const score = -this.minimax(
-        board,
-        depth - 1 - 2,
-        -beta,
-        -beta + 1,
-        color === "black" ? "red" : "black"
-      );
-      if (score >= beta) return beta;
+    // Heuristic: If we are at significant depth and passing the turn is still safe (score >= beta),
+    // we can assume the branch is overwhelmingly strong and avoid searching it further.
+    if (depthLimit >= 3 && !this.isInEndgame(boardArr)) {
+      const opponentColor = (activeColor === "black" ? "red" : "black");
+      const nullMoveScore = -this.minimax(boardArr, depthLimit - 3, -betaVal, -betaVal + 1, opponentColor);
+      if (nullMoveScore >= betaVal) return betaVal;
     }
 
-    // 2. Base cases
-    const gameEnd = this.checkGameEndOnBoard(board);
-    if (gameEnd === "black")
-      return color === "black" ? 100000 + depth : -100000 - depth;
-    if (gameEnd === "red")
-      return color === "red" ? 100000 + depth : -100000 - depth;
-    if (gameEnd === "draw") return 0;
+    // 2. TERMINAL STATE CHECKS
+    const gameStateTag = this.checkGameEndOnBoard(boardArr);
+    if (gameStateTag === "black") {
+      return (activeColor === "black" ? 100000 + depthLimit : -100000 - depthLimit);
+    }
+    if (gameStateTag === "red") {
+      return (activeColor === "red" ? 100000 + depthLimit : -100000 - depthLimit);
+    }
+    if (gameStateTag === "draw") return 0;
 
-    if (depth <= 0) {
-      return this.quiescenceSearch(board, alpha, beta, color);
+    // 3. BASE CASE: DEPTH REACHED
+    if (depthLimit <= 0) {
+      return this.quiescenceSearch(boardArr, alphaVal, betaVal, activeColor);
     }
 
-    // 3. Move generation
-    const moves = this.getAllMovesForBoard(board, color);
-    if (moves.length === 0) return -100000;
+    // 4. GENERATE AND ORCHESTRATE MOVES
+    const availableMoves = this.getAllMovesForBoard(boardArr, activeColor);
+    if (availableMoves.length === 0) return -100000; // No moves = Loss in Draughts
 
-    // Mandatory capture rule
-    const captures = moves.filter((m) => m.isCapture);
-    const validMoves = captures.length > 0 ? captures : moves;
+    // Forced capture rule: pieces must jump if possible
+    const captureMoves = availableMoves.filter((m) => m.isCapture);
+    const candidateMovesList = (captureMoves.length > 0) ? captureMoves : availableMoves;
 
-    // Improved Move ordering
-    const ttEntry = this.transpositionTable.get(hash);
-    const hashMove = ttEntry ? ttEntry.bestMove : null;
-    const killer = this.killerMoves[depth] || [];
+    // Move Ordering Strategy: Hash Move -> Captures -> Killer Moves -> History Heuristic
+    const ttEntryRef = this.transpositionTable.get(boardHashKey);
+    const priorityHashMove = ttEntryRef ? ttEntryRef.bestMove : null;
+    const currentKillerMoves = this.killerMoves[depthLimit] || [];
 
-    validMoves.sort((a, b) => {
-      // 1. Hash move first
-      if (
-        hashMove &&
-        a.fromRow === hashMove.fromRow &&
-        a.toRow === hashMove.toRow &&
-        a.fromCol === hashMove.fromCol &&
-        a.toCol === hashMove.toCol
-      )
-        return -1;
-      if (
-        hashMove &&
-        b.fromRow === hashMove.fromRow &&
-        b.toRow === hashMove.toRow &&
-        b.fromCol === hashMove.fromCol &&
-        b.toCol === hashMove.toCol
-      )
-        return 1;
+    candidateMovesList.sort((moveA, moveB) => {
+      // Priority 1: Best move from the Transposition Table
+      if (priorityHashMove) {
+        const isAMatch = (moveA.fromRow === priorityHashMove.fromRow && moveA.toRow === priorityHashMove.toRow &&
+                          moveA.fromCol === priorityHashMove.fromCol && moveA.toCol === priorityHashMove.toCol);
+        const isBMatch = (moveB.fromRow === priorityHashMove.fromRow && moveB.toRow === priorityHashMove.toRow &&
+                          moveB.fromCol === priorityHashMove.fromCol && moveB.toCol === priorityHashMove.toCol);
+        if (isAMatch) return -1;
+        if (isBMatch) return 1;
+      }
 
-      // 2. Captures next
-      if (b.isCapture && !a.isCapture) return 1;
-      if (a.isCapture && !b.isCapture) return -1;
+      // Priority 2: Standard Capture Moves (already filtered if captures exist, but good for sorting within non-captures if mixed)
+      if (moveB.isCapture && !moveA.isCapture) return 1;
+      if (moveA.isCapture && !moveB.isCapture) return -1;
 
-      // 3. Killer moves
-      const isAKiller = killer.some(
-        (m) =>
-          m.fromRow === a.fromRow &&
-          m.toRow === a.toRow &&
-          m.fromCol === a.fromCol &&
-          m.toCol === a.toCol
-      );
-      const isBKiller = killer.some(
-        (m) =>
-          m.fromRow === b.fromRow &&
-          m.toRow === b.toRow &&
-          m.fromCol === b.fromCol &&
-          m.toCol === b.toCol
-      );
-      if (isAKiller && !isBKiller) return -1;
-      if (isBKiller && !isAKiller) return 1;
+      // Priority 3: Killer Moves (moves that caused a beta-cutoff in other branches at this depth)
+      const isMoveAKiller = currentKillerMoves.some(m => m.fromRow === moveA.fromRow && m.toRow === moveA.toRow && m.fromCol === moveA.fromCol && m.toCol === moveA.toCol);
+      const isMoveBKiller = currentKillerMoves.some(m => m.fromRow === moveB.fromRow && m.toRow === moveB.toRow && m.fromCol === moveB.fromCol && m.toCol === moveB.toCol);
+      if (isMoveAKiller && !isMoveBKiller) return -1;
+      if (isMoveBKiller && !isMoveAKiller) return 1;
 
-      // 4. History Heuristic
-      const keyA = `${a.fromRow},${a.fromCol},${a.toRow},${a.toCol}`;
-      const keyB = `${b.fromRow},${b.fromCol},${b.toRow},${b.toCol}`;
-      return (this.historyTable[keyB] || 0) - (this.historyTable[keyA] || 0);
+      // Priority 4: History Heuristic (moves that were historically good)
+      const keyStrA = `${moveA.fromRow},${moveA.fromCol},${moveA.toRow},${moveA.toCol}`;
+      const keyStrB = `${moveB.fromRow},${moveB.fromCol},${moveB.toRow},${moveB.toCol}`;
+      return (this.historyTable[keyStrB] || 0) - (this.historyTable[keyStrA] || 0);
     });
 
-    let maxScore = -Infinity;
-    let bestMove = null;
-    let movesSearched = 0;
+    let highestBranchScore = -Infinity;
+    let optimalBranchMove = null;
+    let sequenceIndex = 0;
 
-    for (const move of validMoves) {
-      const nextBoard = this.applyMoveToBoard(board, move);
-      let score;
+    for (const moveIter of candidateMovesList) {
+      const nextBoardArr = this.applyMoveToBoard(boardArr, moveIter);
+      const nextPlayerColor = (activeColor === "black" ? "red" : "black");
+      let resultingScore;
 
       // --- LATE MOVE REDUCTION (LMR) ---
-      // Search later moves with reduced depth if they aren't tactical
-      if (
-        movesSearched >= 4 &&
-        depth >= 3 &&
-        !move.isCapture &&
-        !move.isPromotion
-      ) {
-        score = -this.minimax(
-          nextBoard,
-          depth - 2,
-          -(alpha + 1),
-          -alpha,
-          color === "black" ? "red" : "black"
-        );
-        if (score > alpha) {
-          // If the move actually looks good, research with full depth
-          score = -this.minimax(
-            nextBoard,
-            depth - 1,
-            -beta,
-            -alpha,
-            color === "black" ? "red" : "black"
-          );
+      // Search suspected weak moves at shallow depth to save time
+      const isStaticMove = !moveIter.isCapture && !moveIter.isPromotion;
+      if (sequenceIndex >= 4 && depthLimit >= 3 && isStaticMove) {
+        resultingScore = -this.minimax(nextBoardArr, depthLimit - 2, -(alphaVal + 1), -alphaVal, nextPlayerColor);
+        if (resultingScore > alphaVal) {
+          // Re-search at full depth if the reduced search hints at a good move
+          resultingScore = -this.minimax(nextBoardArr, depthLimit - 1, -betaVal, -alphaVal, nextPlayerColor);
         }
       } else {
-        score = -this.minimax(
-          nextBoard,
-          depth - 1,
-          -beta,
-          -alpha,
-          color === "black" ? "red" : "black"
-        );
+        resultingScore = -this.minimax(nextBoardArr, depthLimit - 1, -betaVal, -alphaVal, nextPlayerColor);
       }
 
-      movesSearched++;
-      if (score > maxScore) {
-        maxScore = score;
-        bestMove = move;
+      sequenceIndex++;
+      if (resultingScore > highestBranchScore) {
+        highestBranchScore = resultingScore;
+        optimalBranchMove = moveIter;
       }
-      alpha = Math.max(alpha, score);
-      if (alpha >= beta) {
-        // Beta cutoff: Update Killer moves and History table
-        if (!move.isCapture) {
-          const killer = this.killerMoves[depth];
-          if (
-            !killer.some(
-              (m) =>
-                m.fromRow === move.fromRow &&
-                m.toRow === move.toRow &&
-                m.fromCol === move.fromCol &&
-                m.toCol === move.toCol
-            )
-          ) {
-            killer.unshift(move);
-            if (killer.length > 2) killer.pop();
+      
+      alphaVal = Math.max(alphaVal, resultingScore);
+
+      // ALPHA-BETA CUTOFF (PRUNING)
+      if (alphaVal >= betaVal) {
+        if (!moveIter.isCapture) {
+          // Record Killer Move and update History table
+          const killerStore = this.killerMoves[depthLimit];
+          if (!killerStore.some(m => m.fromRow === moveIter.fromRow && m.toRow === moveIter.toRow && m.fromCol === moveIter.fromCol && m.toCol === moveIter.toCol)) {
+            killerStore.unshift(moveIter);
+            if (killerStore.length > 2) killerStore.pop();
           }
-          const key = `${move.fromRow},${move.fromCol},${move.toRow},${move.toCol}`;
-          this.historyTable[key] =
-            (this.historyTable[key] || 0) + depth * depth;
+          const historyKeyStr = `${moveIter.fromRow},${moveIter.fromCol},${moveIter.toRow},${moveIter.toCol}`;
+          this.historyTable[historyKeyStr] = (this.historyTable[historyKeyStr] || 0) + depthLimit * depthLimit;
         }
         break;
       }
     }
 
-    // 4. Store TT entry
-    let type = 0;
-    if (maxScore <= originalAlpha) type = 2; // BETA (Upper bound)
-    else if (maxScore >= beta) type = 1; // ALPHA (Lower bound)
+    // 5. CACHE RESULT IN TRANSPOSITION TABLE
+    let cacheNodeType = 0; // EXACT
+    if (highestBranchScore <= originalAlphaVal) cacheNodeType = 2; // ALPHA (Upper bound)
+    else if (highestBranchScore >= betaVal) cacheNodeType = 1; // BETA (Lower bound)
 
-    this.transpositionTable.set(hash, {
-      score: maxScore,
-      depth: depth,
-      type: type,
-      bestMove: bestMove,
+    this.transpositionTable.set(boardHashKey, {
+      score: highestBranchScore,
+      depth: depthLimit,
+      type: cacheNodeType,
+      bestMove: optimalBranchMove,
     });
 
-    return maxScore;
+    return highestBranchScore;
   },
 
-  quiescenceSearch(board, alpha, beta, color) {
-    const hash = this.getZobristHash(board, color);
-    if (this.transpositionTable.has(hash)) {
-      const entry = this.transpositionTable.get(hash);
-      if (entry.depth >= 0 && entry.type === 0) return entry.score;
+  /**
+   * Quiescence search to avoid the "horizon effect" by extending the search through tactical exchanges.
+   * Only explores capture chains to find a stable "quiet" position for evaluation.
+   * 
+   * @param {Array} boardArr - The board state array
+   * @param {number} alphaVal - The lower bound of the score range
+   * @param {number} betaVal - The upper bound of the score range
+   * @param {string} playerColor - The color of the player to search for
+   * @returns {number} The stable evaluation score
+   */
+  quiescenceSearch(boardArr, alphaVal, betaVal, playerColor) {
+    const boardHashKey = this.getZobristHash(boardArr, playerColor);
+    
+    // Transposition Table lookup (optional at this level but useful for depth 0 EXACT matches)
+    if (this.transpositionTable.has(boardHashKey)) {
+      const cachedEntry = this.transpositionTable.get(boardHashKey);
+      if (cachedEntry.depth >= 0 && cachedEntry.type === 0) return cachedEntry.score;
     }
 
-    const standPat = this.evaluatePositionEnhanced(board, color);
-    if (standPat >= beta) return beta;
-    if (alpha < standPat) alpha = standPat;
+    // "Stand-pat" score: The evaluation of the current position if no more captures are made
+    const evaluationValue = this.evaluatePositionEnhanced(boardArr, playerColor);
+    if (evaluationValue >= betaVal) return betaVal;
+    if (alphaVal < evaluationValue) alphaVal = evaluationValue;
 
-    const moves = this.getAllMovesForBoard(board, color);
-    const captures = moves.filter((m) => m.isCapture);
+    // Explore ONLY capture moves to reach tactical stability
+    const allMoves = this.getAllMovesForBoard(boardArr, playerColor);
+    const tacticalCaptures = allMoves.filter((m) => m.isCapture);
 
-    for (const move of captures) {
-      const nextBoard = this.applyMoveToBoard(board, move);
-      const score = -this.quiescenceSearch(
-        nextBoard,
-        -beta,
-        -alpha,
-        color === "black" ? "red" : "black"
+    for (const captureMove of tacticalCaptures) {
+      const boardAfterCapture = this.applyMoveToBoard(boardArr, captureMove);
+      const resultingScore = -this.quiescenceSearch(
+        boardAfterCapture,
+        -betaVal,
+        -alphaVal,
+        (playerColor === "black" ? "red" : "black")
       );
 
-      if (score >= beta) return beta;
-      if (score > alpha) alpha = score;
+      if (resultingScore >= betaVal) return betaVal;
+      if (resultingScore > alphaVal) alphaVal = resultingScore;
     }
 
-    return alpha;
+    return alphaVal;
   },
 
-  // ENHANCED STATIC EVALUATION
+  /**
+   * Enhanced heuristic evaluation of a board position.
+   * This is the heart of the AI's strategic judgment, combining material, 
+   * safety, positional advancement, and defensive formation bonuses.
+   * 
+   * @param {Array} board - 10x10 board array
+   * @param {string} color - The color whose position is being evaluated
+   * @returns {number} The total heuristic score
+   */
   evaluatePositionEnhanced(board, color) {
     let score = 0;
-    // Robust weight selection
-    const w =
+    
+    // Select the best available weights
+    const weights =
       this.weights && Object.keys(this.weights).length > 0
         ? this.weights
         : this.baseWeights;
 
-    // First pass: Calculate average row position for each team to identify runners
+    // --- PHASE 1: MATERIAL & GROUP ANALYSIS ---
     let blackRows = 0,
-      blackCount = 0;
+      blackCount = 0,
+      maxBlackRow = 0; // Most advanced black row (Black moves 0 -> 9)
     let redRows = 0,
-      redCount = 0;
+      redCount = 0,
+      minRedRow = BOARD_SIZE - 1; // Most advanced red row (Red moves 9 -> 0)
+      
     for (let r = 0; r < BOARD_SIZE; r++) {
       for (let c = 0; c < BOARD_SIZE; c++) {
         const p = board[r][c];
@@ -6019,9 +6182,11 @@ const enhancedAI = {
           if (p.color === "black") {
             blackRows += r;
             blackCount++;
+            if (r > maxBlackRow) maxBlackRow = r;
           } else {
             redRows += r;
             redCount++;
+            if (r < minRedRow) minRedRow = r;
           }
         }
       }
@@ -6045,9 +6210,9 @@ const enhancedAI = {
     }
     // Minimal spread penalty - pieces should be able to spread out
     if (color === "black" && blackCount > 0) {
-      score -= (blackSpread / blackCount) * (w.groupSpreadPenalty || 5);
+      score -= (blackSpread / blackCount) * (weights.groupSpreadPenalty || 5);
     } else if (redCount > 0) {
-      score -= (redSpread / redCount) * (w.groupSpreadPenalty || 5);
+      score -= (redSpread / redCount) * (weights.groupSpreadPenalty || 5);
     }
 
     // Pre-calculate hash once for the whole board
@@ -6058,32 +6223,32 @@ const enhancedAI = {
       for (let col = 0; col < BOARD_SIZE; col++) {
         const piece = board[row][col];
 
-        // --- EMPTY SQUARE ANALYSIS (Defensive Integrity) ---
+        // --- EMPTY SQUARE ANALYSIS ---
         if (!piece) continue;
 
-        // Apply a small bias based on learned patterns at every node
+        // Apply patterns from memory (Opening Book)
         if (hasOpeningBook) {
           score += (piece.color === color ? 50 : -50);
         }
 
-        const isMe = piece.color === color;
+        const isCurrentPlayer = piece.color === color;
         const isKing = piece.king;
 
         // Base Material Value
-        let value = isKing ? w.king : w.material;
+        let pieceValue = isKing ? weights.king : weights.material;
 
         // --- SAFETY & TACTICS (ABSOLUTE) ---
         const isUnderAttack = this.isPieceUnderAttack(board, row, col, piece.color);
         if (isUnderAttack) {
           // ANY threat is treated as material loss - even if protected
-          value -= w.selfDanger;
+          pieceValue -= weights.selfDanger;
           
           // Kings under long-range threat are extreme priority
-          if (isKing) value -= w.kingEndangerPenalty;
+          if (isKing) pieceValue -= weights.kingEndangerPenalty;
         }
 
         // --- KING PROTECTION BONUS ---
-        if (isKing && isMe) {
+        if (isKing && isCurrentPlayer) {
           // Check if king is protected by friendly pieces
           const protectionCount = this.countKingProtectors(
             board,
@@ -6092,12 +6257,12 @@ const enhancedAI = {
             piece.color
           );
           if (protectionCount > 0) {
-            value += w.kingProtection * protectionCount;
+            pieceValue += weights.kingProtection * protectionCount;
           }
 
           // Penalize exposed kings (no protection and can be attacked)
           if (protectionCount === 0 && isUnderAttack) {
-            value -= w.kingExposurePenalty;
+            pieceValue -= weights.kingExposurePenalty;
           }
         }
 
@@ -6107,144 +6272,188 @@ const enhancedAI = {
           const advanceRow =
             piece.color === "black" ? row : BOARD_SIZE - 1 - row;
 
-          // Reward forward progress (opposite of penalty)
-          value += advanceRow * w.advancement;
+          // Reward forward progress
+          pieceValue += advanceRow * weights.advancement;
 
           // PROMOTION RUSH: Black pieces at row 7+ should prioritize promoting
-          if (piece.color === "black" && row >= 7) {
-            // Strong bonus for being at row 7 or 8 (close to promotion at row 9)
-            value += w.promotionRush;
+          if (piece.color === "black" && row >= 7 && !isUnderAttack) {
+            pieceValue += weights.promotionRush;
 
-            // Extra bonus based on how close to promotion
+            // EXTREME bonus for being at row 8 (One step away)
             if (row === 8) {
-              value += w.promotionRush * 2.5; 
+              pieceValue += weights.promotionRush * 3.0; // Total 4x promotionRush
             }
           }
 
           // Bonus for being close to promotion (general case)
           if (piece.color === "black" && row >= BOARD_SIZE - 2) {
-            value += w.nearPromotion;
+            pieceValue += weights.nearPromotion;
           } else if (piece.color === "red" && row <= 1) {
-            value += w.nearPromotion;
+            pieceValue += weights.nearPromotion;
           }
 
           // Center control (moderate bonus)
           if (row >= 3 && row <= 6 && col >= 3 && col <= 6) {
-            value += w.center;
+            pieceValue += weights.center;
           }
 
           // Edge pieces are slightly safer
-          if (col === 0 || col === BOARD_SIZE - 1) value += w.edgeSafety;
+          if (col === 0 || col === BOARD_SIZE - 1) pieceValue += weights.edgeSafety;
+          
+          // --- DYNAMIC BACK RANK DECAY ---
+          // "decrease value compare to pieces at the front or on the move"
+          if (piece.color === "black" && row <= 1) {
+            const frontLineCount = blackCount - evaluateBackRankStrength();
+            const decayFactor = frontLineCount > 4 ? (weights.backRankDecayRate || 0.5) : 1.0;
+            pieceValue += weights.backRankDefense * decayFactor;
+          }
+          if (piece.color === "red" && row >= BOARD_SIZE - 2) {
+            pieceValue += weights.backRankDefense; // Red (opponent) back rank stays high
+          }
 
-          // Back rank defense (small bonus, not excessive)
-          if (piece.color === "black" && row <= 1) value += w.backRankDefense;
-          if (piece.color === "red" && row >= BOARD_SIZE - 2)
-            value += w.backRankDefense;
+          // --- ATTACK ZONE BONUS (Rows 7/8) ---
+          // "the same pieces btween 7/8 opponent position increase value"
+          if (piece.color === "black" && (row === 7 || row === 8)) {
+            pieceValue += (weights.attackZoneBonus || 50000);
+          }
 
-          // --- COHESION & DEFENSIVE FORMATION (Close The Gap) ---
-          // Reward pieces that have friendly neighbors (formation)
+          // --- MOBILITY ANALYSIS ---
+          // "pieces that are stuck... decrease value"
+          const hasMobility = this.checkPieceMobilitySimplified(board, row, col, piece);
+          if (!hasMobility && !isUnderAttack) {
+            // Only penalize if not already under attack (to avoid double penalty)
+            pieceValue -= (weights.stuckPiecePenalty || 30000);
+          }
+
+          // --- TEAM ADVANCEMENT (WALL FORMAT) ---
+          if (piece.color === "black" && !isKing) {
+            // 1. Front-Line Solidarity: Reward being part of the leading group
+            const distToFront = maxBlackRow - row;
+            if (distToFront <= 1) {
+              pieceValue += weights.frontLineSolidarityBonus;
+            }
+
+            // 2. Isolation Lockdown: Massive penalty for "going rogue"
+            // Find nearest teammate
+            let minTeammateDist = 10;
+            for (let rMatch = 0; rMatch < BOARD_SIZE; rMatch++) {
+              for (let cMatch = 0; cMatch < BOARD_SIZE; cMatch++) {
+                if (rMatch === row && cMatch === col) continue;
+                const other = board[rMatch][cMatch];
+                if (other && other.color === "black") {
+                  const d = Math.abs(rMatch - row);
+                  if (d < minTeammateDist) minTeammateDist = d;
+                }
+              }
+            }
+            if (minTeammateDist > 2) {
+              pieceValue -= weights.isolationLockdownPenalty;
+            }
+          }
+
+          // --- COHESION & DEFENSIVE FORMATION ---
           let neighbors = 0;
-          const checkDirs = [
-            [1, -1],
-            [1, 1],
-            [-1, -1],
-            [-1, 1],
+          let sideBySideNeighbors = 0;
+          const searchDirections = [
+            [0, -2], [0, 2], // Side-by-side (on same row squares)
+            [1, -1], [1, 1], [-1, -1], [-1, 1] // Diagonal
           ];
-          for (const [dr, dc] of checkDirs) {
-            const nr = row + dr,
-              nc = col + dc;
-            if (nr >= 0 && nr < BOARD_SIZE && nc >= 0 && nc < BOARD_SIZE) {
-              const neighbor = board[nr][nc];
+          for (const [deltaRow, deltaCol] of searchDirections) {
+            const neighborRow = row + deltaRow,
+              neighborCol = col + deltaCol;
+            if (neighborRow >= 0 && neighborRow < BOARD_SIZE && neighborCol >= 0 && neighborCol < BOARD_SIZE) {
+              const neighbor = board[neighborRow][neighborCol];
               if (neighbor && neighbor.color === piece.color) {
                 neighbors++;
+                if (deltaRow === 0) sideBySideNeighbors++;
               }
             }
           }
-          // Add cohesion bonus (Gap Closure)
-          if (neighbors > 0) value += neighbors * w.cohesion;
+          // Add cohesion and phalanx alignment bonuses
+          if (neighbors > 0) {
+            pieceValue += neighbors * weights.cohesion;
+            pieceValue += (neighbors + sideBySideNeighbors) * weights.phalanxAlignmentBonus;
+          }
 
           // --- GROUP ADVANCEMENT (PHALANX LOGIC) ---
-          const distFromGroup =
+          const distanceToGroup =
             piece.color === "black" ? row - avgBlackRow : avgRedRow - row;
 
-          // EXTREME penalties for being ahead of the group
-          if (distFromGroup > 1.0) {
-            // Any piece ahead of the pack is heavily penalized
-            value -= w.lonePiecePenalty * distFromGroup;
-          } else if (distFromGroup < -1.0) {
-            // REWARD pieces that are behind - encourage backfilling
-            value += w.phalanxBonus;
+          if (distanceToGroup > 1.0) {
+            // Heavily penalize lone pieces ahead of the group
+            pieceValue -= weights.lonePiecePenalty * distanceToGroup;
+          } else if (distanceToGroup < -1.0) {
+            // Reward pieces that are behind - encourages backfilling
+            pieceValue += weights.phalanxBonus;
           } else {
-            // PHALANX: Piece is aligned with the pack
-            value += w.phalanxBonus;
+            // Piece is aligned with the phalanx
+            pieceValue += weights.phalanxBonus;
           }
         } else {
           // King centrality
           if (row >= 3 && row <= 6 && col >= 3 && col <= 6)
-            value += w.center * 2;
+            pieceValue += weights.center * 2;
         }
 
-        // --- OFFENSIVE PRESSURE (NEW) ---
-        // Reward creating threats/forks
-        const threats = this.countThreatsEnhanced(board, row, col, piece);
-        if (threats > 0) {
-           // Much higher effective weight for search
-           value += threats * (w.threatCreation || 2000); 
+        // --- OFFENSIVE PRESSURE ---
+        // Reward moves that create new immediate threats
+        const threatsDetected = this.countThreatsEnhanced(board, row, col, piece);
+        if (threatsDetected > 0) {
+           pieceValue += threatsDetected * (weights.threatCreation || 2000); 
         }
 
-        if (isMe) score += value;
-        else score -= value;
+        if (isCurrentPlayer) score += pieceValue;
+        else score -= pieceValue;
       }
     }
 
     return score;
   },
 
-  // Helper: Check if a piece is under immediate attack
-  isPieceUnderAttack(board, row, col, color) {
-    const opponent = color === "black" ? "red" : "black";
-    const directions = [
-      [-1, -1],
-      [-1, 1],
-      [1, -1],
-      [1, 1],
+  /**
+   * Determine if a piece at a specific location is under immediate capture threat.
+   * Accounts for both regular pieces and long-range "Flying King" threats.
+   * 
+   * @param {Array} boardArr - The current board state array
+   * @param {number} r - Row index of the piece
+   * @param {number} c - Column index of the piece
+   * @param {string} pieceColor - Color of the piece being checked
+   * @returns {boolean} True if an opponent can capture this piece next turn
+   */
+  isPieceUnderAttack(boardArr, r, c, pieceColor) {
+    const opponentColorVal = (pieceColor === "black" ? "red" : "black");
+    const tacticalDirections = [
+      [-1, -1], [-1, 1], [1, -1], [1, 1]
     ];
 
-    for (const [dRow, dCol] of directions) {
-      // To be captured AT (row, col), an attacker must be in direction -dRow, -dCol
-      // and land in direction +dRow, +dCol
-      const landingRow = row + dRow;
-      const landingCol = col + dCol;
+    for (const [deltaRow, deltaCol] of tacticalDirections) {
+      // For a piece to be captured, an attacker must jump over (r, c) and land on an empty square.
+      const landingRowIdx = r + deltaRow;
+      const landingColIdx = c + deltaCol;
 
-      if (
-        landingRow >= 0 &&
-        landingRow < BOARD_SIZE &&
-        landingCol >= 0 &&
-        landingCol < BOARD_SIZE
-      ) {
-        if (!board[landingRow][landingCol]) {
-          // Landing square is clear. Now look for attackers in the opposite direction.
-          for (let dist = 1; dist < BOARD_SIZE; dist++) {
-            const attackRow = row - dRow * dist;
-            const attackCol = col - dCol * dist;
+      // Check if landing square is within bounds and reachable
+      const isLandingInBounds = (landingRowIdx >= 0 && landingRowIdx < BOARD_SIZE && landingColIdx >= 0 && landingColIdx < BOARD_SIZE);
+      
+      if (isLandingInBounds && !boardArr[landingRowIdx][landingColIdx]) {
+        // Landing square is unoccupied. Now look for an attacker in the opposite direction along the same diagonal.
+        for (let searchDist = 1; searchDist < BOARD_SIZE; searchDist++) {
+          const checkRowIdx = r - deltaRow * searchDist;
+          const checkColIdx = c - deltaCol * searchDist;
 
-            if (
-              attackRow < 0 ||
-              attackRow >= BOARD_SIZE ||
-              attackCol < 0 ||
-              attackCol >= BOARD_SIZE
-            )
-              break;
+          // Stay within board limits
+          if (checkRowIdx < 0 || checkRowIdx >= BOARD_SIZE || checkColIdx < 0 || checkColIdx >= BOARD_SIZE) break;
 
-            const attacker = board[attackRow][attackCol];
-            if (attacker) {
-              if (attacker.color === opponent) {
-                if (attacker.king || dist === 1) {
-                  return true;
-                }
+          const potentialAttacker = boardArr[checkRowIdx][checkColIdx];
+          if (potentialAttacker) {
+            if (potentialAttacker.color === opponentColorVal) {
+              // Standard pieces: jump only from distance 1.
+              // Flying Kings: can jump from any distance along the diagonal.
+              if (potentialAttacker.king || searchDist === 1) {
+                return true;
               }
-              break; // Path blocked
             }
+            // Any piece (friend or foe) blocks the diagonal line of attack for a Flying King.
+            break; 
           }
         }
       }
@@ -6252,640 +6461,615 @@ const enhancedAI = {
     return false;
   },
 
-  // NEW: Count how many friendly pieces are protecting a king
-  countKingProtectors(board, kingRow, kingCol, color) {
-    let protectors = 0;
-    const directions = [
-      [-1, -1],
-      [-1, 1],
-      [1, -1],
-      [1, 1],
+  /**
+   * Count how many friendly pieces are providing defensive support to a king.
+   * Proximity and diagonal alignment contribute to the king's defensive integrity.
+   * 
+   * @param {Array} boardArr - The current board state array
+   * @param {number} kRow - Row index of the king
+   * @param {number} kCol - Column index of the king
+   * @param {string} kingColorVal - Color of the king
+   * @returns {number} The total calculated protection score
+   */
+  countKingProtectors(boardArr, kRow, kCol, kingColorVal) {
+    let totalProtectionPoints = 0;
+    const searchDirections = [
+      [-1, -1], [-1, 1], [1, -1], [1, 1]
     ];
 
-    for (const [dRow, dCol] of directions) {
-      // Check adjacent diagonal squares
-      const adjRow = kingRow + dRow;
-      const adjCol = kingCol + dCol;
+    for (const [deltaRow, deltaCol] of searchDirections) {
+      // Priority 1: Direct support from immediate neighbors
+      const neighborRow = kRow + deltaRow;
+      const neighborCol = kCol + deltaCol;
 
-      if (
-        adjRow >= 0 &&
-        adjRow < BOARD_SIZE &&
-        adjCol >= 0 &&
-        adjCol < BOARD_SIZE
-      ) {
-        const adjacent = board[adjRow][adjCol];
-        if (adjacent && adjacent.color === color) {
-          protectors++;
+      if (neighborRow >= 0 && neighborRow < BOARD_SIZE && neighborCol >= 0 && neighborCol < BOARD_SIZE) {
+        const neighborPiece = boardArr[neighborRow][neighborCol];
+        if (neighborPiece && neighborPiece.color === kingColorVal) {
+          totalProtectionPoints++;
         }
       }
 
-      // For kings, also check if there are friendly pieces along diagonal lines
-      // that block potential attacks
+      // Priority 2: Secondary support from pieces further along the diagonal (blocking lines of fire)
       for (let dist = 2; dist <= 3; dist++) {
-        const distantRow = kingRow + dRow * dist;
-        const distantCol = kingCol + dCol * dist;
+        const distRow = kRow + deltaRow * dist;
+        const distCol = kCol + deltaCol * dist;
 
-        if (
-          distantRow >= 0 &&
-          distantRow < BOARD_SIZE &&
-          distantCol >= 0 &&
-          distantCol < BOARD_SIZE
-        ) {
-          const distant = board[distantRow][distantCol];
-          if (distant) {
-            if (distant.color === color) {
-              protectors += 0.5; // Partial protection from distance
+        if (distRow >= 0 && distRow < BOARD_SIZE && distCol >= 0 && distCol < BOARD_SIZE) {
+          const supportPiece = boardArr[distRow][distCol];
+          if (supportPiece) {
+            if (supportPiece.color === kingColorVal) {
+              totalProtectionPoints += 0.5; // Distant pieces provide half the defensive weight
             }
-            break; // Stop checking this direction
+            // Stop checking further in this direction if any piece is encounter (it masks the threat)
+            break; 
           }
         }
       }
     }
 
-    return Math.floor(protectors);
+    return Math.floor(totalProtectionPoints);
   },
 
-  // NEW: Search-safe threat counting (uses board array, not moves which use DOM)
-  countThreatsEnhanced(board, row, col, piece) {
-    let threatCount = 0;
-    const isKing = piece.king;
-    const opponentColor = piece.color === "black" ? "red" : "black";
+  /**
+   * Evaluates the offensive potential of a piece by counting immediate capture opportunities it creates.
+   * Accounts for multi-direction jumping for standard pieces and long-range jumping for kings.
+   * 
+   * @param {Array} boardArr - The current board state array
+   * @param {number} r - Row index of the piece
+   * @param {number} c - Column index of the piece
+   * @param {Object} pieceObj - The piece being evaluated
+   * @returns {number} The number of distinct capture threats detected
+   */
+  countThreatsEnhanced(boardArr, r, c, pieceObj) {
+    let totalThreatCount = 0;
+    const isKingPiece = pieceObj.king;
+    const opponentColorVal = (pieceObj.color === "black" ? "red" : "black");
+    const tacticalDirections = [[-1, -1], [-1, 1], [1, -1], [1, 1]];
 
-    // In International Checkers, ALL pieces can capture in ALL directions
-    const directions = [[-1, -1], [-1, 1], [1, -1], [1, 1]];
+    if (!isKingPiece) {
+      // Standard Piece: Restricted to immediate neighboring jumps
+      for (const [deltaRow, deltaCol] of tacticalDirections) {
+        const victimRowIdx = r + deltaRow;
+        const victimColIdx = c + deltaCol;
+        const landingRowIdx = r + deltaRow * 2;
+        const landingColIdx = c + deltaCol * 2;
 
-    if (!isKing) {
-        // Regular pieces: immediate jumps
-        for (const [dRow, dCol] of directions) {
-            const jumpRow = row + dRow * 2;
-            const jumpCol = col + dCol * 2;
-            const middleRow = row + dRow;
-            const middleCol = col + dCol;
+        const isLandingInBounds = (landingRowIdx >= 0 && landingRowIdx < BOARD_SIZE && landingColIdx >= 0 && landingColIdx < BOARD_SIZE);
 
-            if (
-                jumpRow >= 0 &&
-                jumpRow < BOARD_SIZE &&
-                jumpCol >= 0 &&
-                jumpCol < BOARD_SIZE
-            ) {
-                const middlePiece = board[middleRow][middleCol];
-                const landSquare = board[jumpRow][jumpCol];
-                // Check for enemy piece to jump over and empty landing spot
-                if (middlePiece && middlePiece.color === opponentColor && !landSquare) {
-                    threatCount++;
-                }
-            }
+        if (isLandingInBounds) {
+          const victimPiece = boardArr[victimRowIdx][victimColIdx];
+          const isLandingEmpty = !boardArr[landingRowIdx][landingColIdx];
+
+          if (victimPiece && victimPiece.color === opponentColorVal && isLandingEmpty) {
+            totalThreatCount++;
+          }
         }
+      }
     } else {
-        // Flying King: Long range jumps
-        for (const [dRow, dCol] of directions) {
-            let foundEnemy = false;
-            // Scan along the diagonal
-            for (let dist = 1; dist < BOARD_SIZE; dist++) {
-                const checkRow = row + dRow * dist;
-                const checkCol = col + dCol * dist;
+      // Flying King: Can leap over long distances to capture an enemy
+      for (const [deltaRow, deltaCol] of tacticalDirections) {
+        let enemySpottedOnDiagonal = false;
+        
+        for (let searchDist = 1; searchDist < BOARD_SIZE; searchDist++) {
+          const checkRowIdx = r + deltaRow * searchDist;
+          const checkColIdx = c + deltaCol * searchDist;
 
-                if (checkRow < 0 || checkRow >= BOARD_SIZE || checkCol < 0 || checkCol >= BOARD_SIZE) break;
+          if (checkRowIdx < 0 || checkRowIdx >= BOARD_SIZE || checkColIdx < 0 || checkColIdx >= BOARD_SIZE) break;
 
-                const p = board[checkRow][checkCol];
+          const pieceOnPath = boardArr[checkRowIdx][checkColIdx];
 
-                if (!foundEnemy) {
-                    if (p) {
-                        if (p.color === piece.color) break; // Blocked by friendly
-                        if (p.color === opponentColor) foundEnemy = true; // Found target
-                    }
-                } else {
-                    // We already found an enemy, now looking for landing spot
-                    if (p) break; // Blocked by another piece after enemy
-                    
-                    // Empty square after enemy => VALID THREAT
-                    threatCount++;
-                    break; // Count 1 threat per direction
-                }
+          if (!enemySpottedOnDiagonal) {
+            if (pieceOnPath) {
+              if (pieceOnPath.color === pieceObj.color) break; // Path is blocked by a friendly piece
+              if (pieceOnPath.color === opponentColorVal) enemySpottedOnDiagonal = true; // Target identified
             }
+          } else {
+            // After spotting an enemy, the very next square must be empty to complete the jump
+            if (pieceOnPath) break; // Path is blocked immediately after the enemy piece
+            
+            // Valid capture landing found
+            totalThreatCount++;
+            break; // Stop searching this direction once a capture is validated
+          }
         }
+      }
     }
     
-    return threatCount;
+    return totalThreatCount;
   },
 
   // Helper: Detect endgame phase
   isInEndgame(board) {
     let pieces = 0;
     for (let r = 0; r < 10; r++) {
-      for (let c = 0; c < 10; c++) {
-        if (board[r][c]) pieces++;
+      for (let c = 0; c < 10; c++) if (board[r][c]) pieces++;
+    }
+    return pieces <= 10; // Synchronized threshold
+  },
+
+  /**
+   * Helper: Calculate total material value for a player on a board state.
+   * 
+   * @param {Array} boardArr - The board state
+   * @param {string} color - Player color
+   * @returns {number} Count of pieces (Kings weighted slightly higher for safety checks)
+   */
+  calculateTotalMaterial(boardArr, color) {
+    let count = 0;
+    for (let r = 0; r < BOARD_SIZE; r++) {
+      for (let c = 0; c < BOARD_SIZE; c++) {
+        const piece = boardArr[r][c];
+        if (piece && piece.color === color) {
+          count += piece.king ? 1.5 : 1;
+        }
       }
     }
-    return pieces <= 6; // Standard checkers endgame threshold
+    return count;
+  },
+
+  /**
+   * Fast check for piece mobility without generating full move objects.
+   * 
+   * @param {Array} board - Board state
+   * @param {number} r - Row
+   * @param {number} c - Col
+   * @param {Object} piece - Piece object
+   * @returns {boolean} True if the piece can make at least one legal move or capture
+   */
+  checkPieceMobilitySimplified(board, r, c, piece) {
+    const directions = piece.king ? [[-1, -1], [-1, 1], [1, -1], [1, 1]] : 
+                      (piece.color === "black" ? [[1, -1], [1, 1]] : [[-1, -1], [-1, 1]]);
+    
+    // 1. Check for standard moves
+    for (const [dr, dc] of directions) {
+      const nr = r + dr;
+      const nc = c + dc;
+      if (nr >= 0 && nr < BOARD_SIZE && nc >= 0 && nc < BOARD_SIZE) {
+        if (!board[nr][nc]) return true; // Can move to empty square
+      }
+    }
+
+    // 2. Check for captures (all pieces can jump any direction)
+    const jumpDirs = [[-1, -1], [-1, 1], [1, -1], [1, 1]];
+    for (const [dr, dc] of jumpDirs) {
+      const victimR = r + dr;
+      const victimC = c + dc;
+      const landR = r + dr * 2;
+      const landC = c + dc * 2;
+      
+      if (landR >= 0 && landR < BOARD_SIZE && landC >= 0 && landC < BOARD_SIZE) {
+        const victim = board[victimR][victimC];
+        if (victim && victim.color !== piece.color && !board[landR][landC]) return true;
+      }
+    }
+
+    return false; // No immediate moves found
   },
 
   // TACTICAL EVALUATION - No randomness, pure calculation
-  evaluateTactical(move) {
-    let tacticalScore = 0;
+  /**
+   * Evaluates the immediate tactical benefits or penalties of a specific move.
+   * Focuses on captures, multi-capture potential, and promotion safety.
+   * 
+   * @param {Object} moveObj - The move object to evaluate
+   * @returns {number} The calculated tactical score
+   */
+  evaluateTactical(moveObj) {
+    let tacticalEvaluationScore = 0;
 
-    // Capture evaluation (prioritized by piece value)
-    if (move.isCapture) {
-      tacticalScore += this.weights.captureBase;
+    // --- CAPTURE EVALUATION ---
+    if (moveObj.isCapture) {
+      tacticalEvaluationScore += this.weights.captureBase;
 
-      // Calculate total capture potential for this move
-      const totalCapturePotential = this.getTotalCaptureCount(move);
+      // Identify total pieces captured (primary and potential chain continuations)
+      const currentMoveCaptureCount = this.getTotalCaptureCount(moveObj);
 
-      // MAXIMUM CAPTURE ENFORCEMENT: Heavily prioritize maximum captures
-      const allCaptureMoves = this.getAllMoves("black").filter(
-        (m) => m.isCapture
-      );
-      if (allCaptureMoves.length > 0) {
-        const maxPossibleCaptures = Math.max(
-          ...allCaptureMoves.map((m) => this.getTotalCaptureCount(m))
-        );
+      // MANDATORY MAXIMUM CAPTURE ENFORCEMENT
+      const allLegalCaptures = this.getAllMoves("black").filter((m) => m.isCapture);
+      if (allLegalCaptures.length > 0) {
+        const absoluteMaxCapturesValue = Math.max(...allLegalCaptures.map((m) => this.getTotalCaptureCount(m)));
 
-        if (totalCapturePotential === maxPossibleCaptures) {
-          // This is a maximum capture - HUGE bonus
-          tacticalScore += 1000; // Massive bonus for maximum capture
+        if (currentMoveCaptureCount === absoluteMaxCapturesValue) {
+          // Move satisfies the requirement to maximize captures
+          tacticalEvaluationScore += 1000; 
         } else {
-          // This is not maximum capture - HUGE penalty
-          tacticalScore -= 2000; // Massive penalty for non-maximum capture
-          return tacticalScore; // Return early with heavy penalty
+          // Illegal or suboptimal capture sequence
+          tacticalEvaluationScore -= 2000; 
+          return tacticalEvaluationScore; 
         }
       }
 
-      // Multi-capture bonus - heavily reward capturing more pieces
-      if (move.capturedPieces && move.capturedPieces.length > 1) {
-        // Kings with multi-captures already have this info
-        const captureCount = move.capturedPieces.length;
-        tacticalScore += (captureCount - 1) * this.weights.multiCaptureBonus;
+      // Multi-capture Chain Bonus
+      if (moveObj.capturedPieces && moveObj.capturedPieces.length > 1) {
+        const chainLengthValue = moveObj.capturedPieces.length;
+        tacticalEvaluationScore += (chainLengthValue - 1) * this.weights.multiCaptureBonus;
 
-        // LEARNING BOOST: Extra bonus for longer chains to encourage multi-capture mastery
-        if (captureCount >= 3) {
-          tacticalScore += 300; // Bonus for 3+ capture chains
-        }
-        if (captureCount >= 4) {
-          tacticalScore += 500; // Additional bonus for 4+ capture chains
-        }
-      } else if (totalCapturePotential > 1) {
-        // Regular pieces - check potential continuation captures
-        tacticalScore +=
-          (totalCapturePotential - 1) * this.weights.multiCaptureBonus;
-
-        // LEARNING BOOST: Reward recognizing multi-capture potential
-        if (totalCapturePotential >= 3) {
-          tacticalScore += 200;
-        }
+        // Mastery milestones for long chains
+        if (chainLengthValue >= 3) tacticalEvaluationScore += 300;
+        if (chainLengthValue >= 4) tacticalEvaluationScore += 500;
+      } else if (currentMoveCaptureCount > 1) {
+        tacticalEvaluationScore += (currentMoveCaptureCount - 1) * this.weights.multiCaptureBonus;
+        if (currentMoveCaptureCount >= 3) tacticalEvaluationScore += 200;
       }
 
-      // NEW: Multi-capture setup detection
-      // Check if this capture creates an opportunity for another multi-capture
-      const multiCaptureSetupValue = this.evaluateMultiCaptureSetup(move);
-      tacticalScore += multiCaptureSetupValue;
+      // Chain potential: rewards moves that setup future tactical opportunities
+      tacticalEvaluationScore += this.evaluateMultiCaptureSetup(moveObj);
 
-      // King capture bonus - reward capturing kings
-      if (move.isKingCapture) {
-        // Regular piece capturing a king
-        tacticalScore += this.weights.kingCaptureBonus;
-      } else if (move.capturedKingsCount && move.capturedKingsCount > 0) {
-        // King capturing other king(s) in multi-capture
-        tacticalScore +=
-          move.capturedKingsCount * this.weights.kingCaptureBonus;
+      // Victim-specific weights (High priority on capturing kings)
+      if (moveObj.isKingCapture) {
+        tacticalEvaluationScore += this.weights.kingCaptureBonus;
+      } else if (moveObj.capturedKingsCount && moveObj.capturedKingsCount > 0) {
+        tacticalEvaluationScore += moveObj.capturedKingsCount * this.weights.kingCaptureBonus;
       }
 
-      // CRITICAL: Heavily reward safe captures, penalize dangerous ones
-      const isSafe = !this.willBeUnderThreat(
-        move.toRow,
-        move.toCol,
-        move.piece
-      );
-      if (isSafe) {
-        tacticalScore += this.weights.safeCaptureBonus;
+      // Safety Verification: Is the piece landed in a threatened square?
+      const isLandingSafe = !this.willBeUnderThreat(moveObj.toRow, moveObj.toCol, moveObj.piece);
+      if (isLandingSafe) {
+        tacticalEvaluationScore += this.weights.safeCaptureBonus;
       } else {
-        // Dangerous capture - reduce the score significantly
-        tacticalScore -= 250; // Penalty for risky capture
-
-        // Unless it's a multi-capture that's worth the risk
-        if (totalCapturePotential > 1) {
-          tacticalScore += 100; // Partially offset risk for multi-capture
+        tacticalEvaluationScore -= 250; // Risky capture
+        if (currentMoveCaptureCount > 1) {
+          tacticalEvaluationScore += 100; // Multi-captures partially mitigate risk
         }
       }
     }
 
-    // King promotion potential
-    if (
-      move.toRow === BOARD_SIZE - 1 &&
-      move.piece.dataset.color === "black" &&
-      move.piece.dataset.king !== "true"
-    ) {
-      tacticalScore += this.weights.promotionBonus;
-
-      // But check if promotion square is safe
-      if (!this.willBeUnderThreat(move.toRow, move.toCol, move.piece)) {
-        tacticalScore += 200; // Bonus for safe promotion
-      } else {
-        tacticalScore -= 150; // Penalize risky promotion
-      }
+    // --- PROMOTION POTENTIAL ---
+    const isPromotingMove = (moveObj.toRow === BOARD_SIZE - 1 && 
+                             moveObj.piece.dataset.color === "black" && 
+                             moveObj.piece.dataset.king !== "true");
+    
+    if (isPromotingMove) {
+      tacticalEvaluationScore += this.weights.promotionBonus;
+      
+      const isPromotionSafe = !this.willBeUnderThreat(moveObj.toRow, moveObj.toCol, moveObj.piece);
+      tacticalEvaluationScore += (isPromotionSafe ? 200 : -150);
     }
 
-    // PROMOTION RUSH: Heavily reward forward movement for pieces at row 7+
-    if (
-      !move.isCapture &&
-      move.piece.dataset.color === "black" &&
-      move.piece.dataset.king !== "true"
-    ) {
-      const fromRow = move.fromRow;
-      const toRow = move.toRow;
+    // --- PROMOTION RUSH (Aggressive advancement for advanced pawns) ---
+    const isPassiveAdvance = (!moveObj.isCapture && 
+                              moveObj.piece.dataset.color === "black" && 
+                              moveObj.piece.dataset.king !== "true");
+    
+    if (isPassiveAdvance) {
+      const startRowIdx = moveObj.fromRow;
+      const endRowIdx = moveObj.toRow;
 
-      // If piece is at row 7 or 8, rushing toward promotion
-      if (fromRow >= 7 && toRow > fromRow) {
-        // Moving forward toward promotion - MASSIVE bonus
-        tacticalScore += this.weights.nearPromotionAdvancement;
-
-        // Even bigger bonus if at row 8 (one move from promotion)
-        if (fromRow === 8) {
-          tacticalScore += this.weights.promotionRush;
+      if (startRowIdx >= 7 && endRowIdx > startRowIdx) {
+        tacticalEvaluationScore += this.weights.nearPromotionAdvancement;
+        if (startRowIdx === 8) {
+          tacticalEvaluationScore += this.weights.promotionRush; // Critical step to 9
         }
       }
     }
 
-    // Threat creation
-    tacticalScore += this.evaluateThreatCreation(move);
+    // Secondary tactical checks
+    tacticalEvaluationScore += this.evaluateThreatCreation(moveObj);
+    tacticalEvaluationScore += this.evaluateDefensiveValue(moveObj);
 
-    // Defensive value
-    tacticalScore += this.evaluateDefensiveValue(move);
-
-    return tacticalScore;
+    return tacticalEvaluationScore;
   },
 
   // ENHANCED POSITIONAL EVALUATION - Defensive-focused positioning
-  evaluatePositional(move) {
-    let positionalScore = 0;
+  /**
+   * Evaluates the positional and structural impact of a move.
+   * Prioritizes defensive formations, cohesion, and maintaining a solid front.
+   * 
+   * @param {Object} moveObj - The move object to evaluate
+   * @returns {number} The calculated positional score
+   */
+  evaluatePositional(moveObj) {
+    let positionalEvaluationScore = 0;
 
-    // PRIORITY 1: Defensive formation (NEW - highest priority)
-    const defensiveValue = this.evaluateDefensiveFormation(move);
-    positionalScore += defensiveValue;
+    // TOP PRIORITY: Structural formations (Phalanx, Column, etc.)
+    positionalEvaluationScore += this.evaluateDefensiveFormation(moveObj);
 
-    // PRIORITY 2: Piece cohesion (keeping pieces together)
-    positionalScore += this.evaluateCohesion(move) * this.weights.cohesion;
+    // PRIORITY 2: Spatial Cohesion (keeping pieces within support distance)
+    positionalEvaluationScore += this.evaluateCohesion(moveObj) * this.weights.cohesion;
 
-    // PRIORITY 3: Gap closure (maintaining formation)
-    positionalScore += this.evaluateGapClosure(move) * this.weights.gapClosure;
+    // PRIORITY 3: Gap Maintenance (limiting opponent breakthrough opportunities)
+    positionalEvaluationScore += this.evaluateGapClosure(moveObj) * this.weights.gapClosure;
 
-    // PRIORITY 4: Mutual support
-    positionalScore += this.evaluateSupport(move) * this.weights.support;
+    // PRIORITY 4: Active Mutual Support (defending and being defended)
+    positionalEvaluationScore += this.evaluateSupport(moveObj) * this.weights.support;
 
-    // PRIORITY 5: Center control (strategic squares) - REDUCED priority
-    const centerValue = this.evaluateCenterControl(move);
-    positionalScore += centerValue * this.weights.center * 0.7; // Reduced by 30%
+    // PRIORITY 5: Geometric Control (centering pieces)
+    positionalEvaluationScore += this.evaluateCenterControl(moveObj) * this.weights.center * 0.7;
 
-    // Edge safety
-    if (move.toCol === 0 || move.toCol === BOARD_SIZE - 1) {
-      positionalScore += this.weights.edgeSafety;
+    // Edge Safety: Pieces on the board boundaries are naturally safer from capture
+    if (moveObj.toCol === 0 || moveObj.toCol === BOARD_SIZE - 1) {
+      positionalEvaluationScore += this.weights.edgeSafety;
     }
 
-    // Avoid isolation
-    positionalScore -=
-      this.evaluateIsolation(move) * this.weights.isolationPenalty;
+    // Penalize isolated pieces that are disconnected from the formation
+    positionalEvaluationScore -= this.evaluateIsolation(moveObj) * this.weights.isolationPenalty;
 
-    // CRITICAL: Check if this move puts our piece in danger
-    positionalScore += this.evaluateSelfDanger(move);
+    // Absolute Safety: Does this move land the piece in immediate danger?
+    positionalEvaluationScore += this.evaluateSelfDanger(moveObj);
 
-    // NEW: Reward filling gaps left by advancing pieces
-    positionalScore += this.evaluateGapFilling(move);
+    // Dynamic Reinforcement
+    positionalEvaluationScore += this.evaluateGapFilling(moveObj);
+    positionalEvaluationScore += this.evaluateFollowLeader(moveObj);
+    positionalEvaluationScore += this.evaluateCompactAdvancement(moveObj);
+    positionalEvaluationScore += this.evaluateSideOccupation(moveObj);
 
-    // NEW: Reward following the formation forward
-    positionalScore += this.evaluateFollowLeader(move);
-
-    // NEW: Reward compact forward advancement
-    positionalScore += this.evaluateCompactAdvancement(move);
-
-    // Side square occupation priority
-    positionalScore += this.evaluateSideOccupation(move);
-
-    return positionalScore;
+    return positionalEvaluationScore;
   },
 
   // STRATEGIC EVALUATION - Long-term planning
-  evaluateStrategic(move) {
-    let strategicScore = 0;
+  /**
+   * Evaluates the long-term strategic value of a move.
+   * Focuses on advancement, king activity, and territorial control.
+   * 
+   * @param {Object} moveObj - The move object to evaluate
+   * @returns {number} The calculated strategic score
+   */
+  evaluateStrategic(moveObj) {
+    let strategicEvaluationScore = 0;
 
-    // Advancement bonus for regular pieces
-    if (move.piece.dataset.king !== "true") {
-      const advancement =
-        move.piece.dataset.color === "black"
-          ? move.toRow
-          : BOARD_SIZE - 1 - move.toRow;
-      strategicScore += advancement * this.weights.advancement;
+    // Advancement progress for standard pieces
+    if (moveObj.piece.dataset.king !== "true") {
+      const rowsAdvancedCount = (moveObj.piece.dataset.color === "black") ? moveObj.toRow : (BOARD_SIZE - 1 - moveObj.toRow);
+      strategicEvaluationScore += rowsAdvancedCount * this.weights.advancement;
     }
 
-    // King mobility and activity
-    if (move.piece.dataset.king === "true") {
-      strategicScore += this.evaluateKingActivity(move);
+    // Dynamic weight for king activity and scope
+    if (moveObj.piece.dataset.king === "true") {
+      strategicEvaluationScore += this.evaluateKingActivity(moveObj);
     }
 
-    // Control of key squares
-    strategicScore += this.evaluateKeySquareControl(move);
+    // Territorial and initiative metrics
+    strategicEvaluationScore += this.evaluateKeySquareControl(moveObj);
+    strategicEvaluationScore += this.evaluateTempo(moveObj);
 
-    // Tempo and initiative
-    strategicScore += this.evaluateTempo(move);
-
-    return strategicScore;
+    return strategicEvaluationScore;
   },
 
   // LEARNED PATTERNS - Experience-based evaluation
-  evaluateLearnedPatterns(move) {
-    let learnedScore = 0;
+  /**
+   * Evaluates a move based on patterns and outcomes learned from past games.
+   * Leverages the persistent memory database to favor winning behaviors.
+   * 
+   * @param {Object} moveObj - The move object to evaluate
+   * @returns {number} The bonus or penalty derived from experience
+   */
+  evaluateLearnedPatterns(moveObj) {
+    let patternHeuristicScore = 0;
 
-    // Get position hash for pattern recognition
-    const positionHash = this.getPositionHash();
-
-    // Check if we've seen this position before
-    if (this.memory.positionDatabase.has(positionHash)) {
-      const positionData = this.memory.positionDatabase.get(positionHash);
-      learnedScore += positionData.evaluation || 0;
+    // 1. Exact Position Recognition
+    const boardStateHashVal = this.getPositionHash();
+    if (this.memory.positionDatabase.has(boardStateHashVal)) {
+      const historicalEntry = this.memory.positionDatabase.get(boardStateHashVal);
+      patternHeuristicScore += (historicalEntry.evaluation || 0);
     }
 
-    // Check winning move types
-    const moveType = this.getMoveType(move);
-    if (this.memory.winningMoveTypes.has(moveType)) {
-      learnedScore +=
-        this.memory.winningMoveTypes.get(moveType) *
-        this.weights.learnedWinPattern;
+    // 2. Behavioral Tendencies (Move Categorization)
+    const moveStyleTag = this.getMoveType(moveObj);
+    
+    // Reward categories associated with previous victories
+    if (this.memory.winningMoveTypes.has(moveStyleTag)) {
+      patternHeuristicScore += this.memory.winningMoveTypes.get(moveStyleTag) * this.weights.learnedWinPattern;
     }
 
-    // Avoid losing move types
-    if (this.memory.losingMoveTypes.has(moveType)) {
-      learnedScore -=
-        this.memory.losingMoveTypes.get(moveType) *
-        this.weights.learnedLossPattern;
+    // Penalize categories associated with previous defeats
+    if (this.memory.losingMoveTypes.has(moveStyleTag)) {
+      patternHeuristicScore -= this.memory.losingMoveTypes.get(moveStyleTag) * this.weights.learnedLossPattern;
     }
 
-    return learnedScore;
+    return patternHeuristicScore;
   },
 
-  getAllMoves(color) {
-    const allMoves = [];
-    const captureMoves = [];
+  /**
+   * Generates all legal moves for a specific player color.
+   * Strictly enforces mandatory capture rules and maximum capture sequence requirements.
+   * 
+   * @param {string} activeColor - The color of the player whose moves are being generated
+   * @returns {Array} A filtered list of legal move objects
+   */
+  getAllMoves(activeColor) {
+    const passiveMovesList = [];
+    const tacticalCapturesList = [];
 
-    // If we must continue capturing with a specific piece, only get moves for that piece
-    if (mustContinueCapture && forcedCapturePiece && color === "black") {
-      console.log("getAllMoves: forced capture active for black; forcedCapturePiece=", forcedCapturePiece ? (forcedCapturePiece.dataset.row + "," + forcedCapturePiece.dataset.col) : null);
-      // Find the position of the forced piece
-      for (let row = 0; row < BOARD_SIZE; row++) {
-        for (let col = 0; col < BOARD_SIZE; col++) {
-          const piece = this.getPieceAt(row, col);
-          if (piece === forcedCapturePiece) {
-            const pieceMoves = this.getPieceMoves(row, col, piece);
-            const caps = pieceMoves.filter((move) => move.isCapture);
-            console.log("getAllMoves: forced piece found at", row, col, "captureMoves=", caps.length);
-            return caps; // Only return capture moves
+    // MANDATORY CONTINUATION: If a piece is mid-capture sequence, only it can finish the jump
+    if (mustContinueCapture && forcedCapturePiece && activeColor === "black") {
+      // Locate the forced piece's position on the DOM (used for frontend-integrated search)
+      for (let r = 0; r < BOARD_SIZE; r++) {
+        for (let c = 0; c < BOARD_SIZE; c++) {
+          const pieceAtPos = this.getPieceAt(r, c);
+          if (pieceAtPos === forcedCapturePiece) {
+            const potentialMoves = this.getPieceMoves(r, c, pieceAtPos);
+            const forcedCaptures = potentialMoves.filter((m) => m.isCapture);
+            return forcedCaptures; 
           }
         }
       }
-      console.log("getAllMoves: forcedCapturePiece not found on board");
-      return []; // Piece not found
+      return []; // Piece lost or mismatch occurred
     }
 
-    for (let row = 0; row < BOARD_SIZE; row++) {
-      for (let col = 0; col < BOARD_SIZE; col++) {
-        const piece = this.getPieceAt(row, col);
-        if (!piece || piece.dataset.color !== color) continue;
+    // Standard move generation across the whole board
+    for (let r = 0; r < BOARD_SIZE; r++) {
+      for (let c = 0; c < BOARD_SIZE; c++) {
+        const pieceObj = this.getPieceAt(r, c);
+        if (!pieceObj || pieceObj.dataset.color !== activeColor) continue;
 
-        // Get all valid moves for this piece
-        const pieceMoves = this.getPieceMoves(row, col, piece);
+        const piecePotentialMoves = this.getPieceMoves(r, c, pieceObj);
 
-        // Separate capture moves from regular moves
-        for (const move of pieceMoves) {
-          if (move.isCapture) {
-            captureMoves.push(move);
+        for (const moveIter of piecePotentialMoves) {
+          if (moveIter.isCapture) {
+            tacticalCapturesList.push(moveIter);
           } else {
-            allMoves.push(move);
+            passiveMovesList.push(moveIter);
           }
         }
       }
     }
 
-    // ENHANCED MANDATORY CAPTURE: Must choose the sequence that captures the most pieces
-    if (captureMoves.length > 0) {
-      return this.filterForMaximumCaptures(captureMoves);
+    // MANDATORY CAPTURE: If any jump is possible, only jump sequences that capture the maximum number of pieces are legal
+    if (tacticalCapturesList.length > 0) {
+      return this.filterForMaximumCaptures(tacticalCapturesList);
     }
 
-    return allMoves;
+    return passiveMovesList;
   },
 
-  // NEW: Filter capture moves to only include those with maximum capture count
-  filterForMaximumCaptures(captureMoves) {
-    // Calculate capture count for each move
-    const movesWithCounts = captureMoves.map((move) => {
-      const captureCount = this.getTotalCaptureCount(move);
-      return {
-        ...move,
-        totalCaptureCount: captureCount,
-      };
+  /**
+   * Filters a list of capture moves to strictly include only those that capture the maximum number of pieces.
+   * This ensures compliance with International Draughts "Maximum Capture" rule.
+   * 
+   * @param {Array} captureMovesList - The list of available capture moves
+   * @returns {Array} The filtered list of maximal capture moves
+   */
+  filterForMaximumCaptures(captureMovesList) {
+    // Enrich moves with their calculated potential capture count
+    const movesWithPotentials = captureMovesList.map((moveObj) => {
+      const capturedCountVal = this.getTotalCaptureCount(moveObj);
+      return { ...moveObj, totalCaptureCount: capturedCountVal };
     });
 
-    // Find the maximum capture count
-    const maxCaptureCount = Math.max(
-      ...movesWithCounts.map((m) => m.totalCaptureCount)
+    const absoluteMaxCaptureCount = Math.max(...movesWithPotentials.map((m) => m.totalCaptureCount));
+
+    // Retain only moves that match the maximum achievable captures
+    const optimizedCaptureOptions = movesWithPotentials.filter(
+      (m) => m.totalCaptureCount === absoluteMaxCaptureCount
     );
 
-    // Filter to only include moves with maximum captures
-    const maxCaptureMoves = movesWithCounts.filter(
-      (m) => m.totalCaptureCount === maxCaptureCount
-    );
-
-    return maxCaptureMoves;
+    return optimizedCaptureOptions;
   },
 
-  // NEW: Get total number of pieces captured in a move sequence
-  getTotalCaptureCount(move) {
-    if (!move.isCapture) return 0;
+  /**
+   * Calculates the total number of pieces a specific move sequence will capture.
+   * For kings, this is usually pre-calculated in the sequence generator.
+   * 
+   * @param {Object} moveObj - The move object to analyze
+   * @returns {number} The total count of captured victims
+   */
+  getTotalCaptureCount(moveObj) {
+    if (!moveObj.isCapture) return 0;
 
-    // For king multi-captures, count captured pieces
-    if (move.capturedPieces && move.capturedPieces.length > 0) {
-      return move.capturedPieces.length;
+    // For king multi-captures, the list of captured coordinates is typically present
+    if (moveObj.capturedPieces && moveObj.capturedPieces.length > 0) {
+      return moveObj.capturedPieces.length;
     }
 
-    // For regular pieces, use the existing calculateCapturePotential method
-    return this.calculateCapturePotential(move);
+    // Fallback to recursive capture potential calculation for standard pieces or basic moves
+    return this.calculateCapturePotential(moveObj);
   },
 
-  getPieceMoves(row, col, piece) {
-    const MAX_MOVES_PER_PIECE = 100; // Safety limit to prevent infinite loops
-    const moves = [];
-    const isKing = piece.dataset.king === "true";
-    const color = piece.dataset.color;
-    const opponentColor = color === "black" ? "red" : "black";
+  /**
+   * Generates all legal moves for a specific piece at a given board position.
+   * Handles long-range king movement and multi-capture sequences.
+   * 
+   * @param {number} rIdx - Row index of the piece
+   * @param {number} cIdx - Column index of the piece
+   * @param {HTMLElement} pieceEle - The DOM element representing the piece
+   * @returns {Array} A list of legal move objects for this piece
+   */
+  getPieceMoves(rIdx, cIdx, pieceEle) {
+    const MOVE_RECURSION_LIMIT = 100; // Guard against potential infinite loops in sequence generation
+    const calculatedMovesList = [];
+    const isKingPiece = pieceEle.dataset.king === "true";
+    const pieceColorVal = pieceEle.dataset.color;
+    const opponentColorVal = (pieceColorVal === "black" ? "red" : "black");
 
-    // Kings can move in all directions, regular pieces can capture in all directions but move only forward
-    const allDirections = [
-      [-1, -1],
-      [-1, 1],
-      [1, -1],
-      [1, 1],
-    ];
+    const tacticalDirections = [[-1, -1], [-1, 1], [1, -1], [1, 1]];
 
-    const forwardDirections = isKing
-      ? allDirections
-      : color === "black"
-      ? [
-          [1, -1],
-          [1, 1],
-        ] // Black moves downward
-      : [
-          [-1, -1],
-          [-1, 1],
-        ]; // Red moves upward
+    const passiveDirections = isKingPiece
+      ? tacticalDirections
+      : (pieceColorVal === "black"
+        ? [[1, -1], [1, 1]] // Black pawns advance downward (increasing row)
+        : [[-1, -1], [-1, 1]]); // Red pawns advance upward (decreasing row)
 
-    if (isKing) {
-      // Kings can move and capture at long distance with multiple captures
+    if (isKingPiece) {
+      // --- KING MOVEMENT LOGIC (Flying King) ---
+      const sequenceSearchStart = Date.now();
+      const kingCaptureSequencesList = this.getKingCaptureSequences(rIdx, cIdx, pieceEle, []);
+      const searchDurationTime = Date.now() - sequenceSearchStart;
 
-      // First, get all possible capture moves with safety limit
-      const sequenceStartTime = Date.now();
-      const captureSequences = this.getKingCaptureSequences(
-        row,
-        col,
-        piece,
-        []
-      );
-      const sequenceTime = Date.now() - sequenceStartTime;
+      // SAFETY FALLBACK: If deep sequence search is too computationally expensive, use immediate captures only
+      if (searchDurationTime > 3000) {
+        for (const [deltaRow, deltaCol] of tacticalDirections) {
+          for (let distScale = 1; distScale < BOARD_SIZE; distScale++) {
+            const enemyRowIdx = rIdx + deltaRow * distScale;
+            const enemyColIdx = cIdx + deltaCol * distScale;
+            if (enemyRowIdx < 0 || enemyRowIdx >= BOARD_SIZE || enemyColIdx < 0 || enemyColIdx >= BOARD_SIZE) break;
 
-      // If king capture sequences took too long, fall back to simpler logic
-      if (sequenceTime > 3000) {
-        // Fallback: just look for immediate captures
-        for (const [dRow, dCol] of allDirections) {
-          for (let distance = 1; distance < BOARD_SIZE; distance++) {
-            const enemyRow = row + dRow * distance;
-            const enemyCol = col + dCol * distance;
-            if (
-              enemyRow < 0 ||
-              enemyRow >= BOARD_SIZE ||
-              enemyCol < 0 ||
-              enemyCol >= BOARD_SIZE
-            )
-              break;
+            const enemyPieceCandidate = this.getPieceAt(enemyRowIdx, enemyColIdx);
+            if (!enemyPieceCandidate) continue;
+            if (enemyPieceCandidate.dataset.color !== opponentColorVal) break;
 
-            const enemyPiece = this.getPieceAt(enemyRow, enemyCol);
-            if (!enemyPiece) continue;
-            if (enemyPiece.dataset.color !== opponentColor) break;
+            // Victim found; identify suitable landing squares behind it
+            for (let landDist = distScale + 1; landDist < BOARD_SIZE; landDist++) {
+              const landRowIdx = rIdx + deltaRow * landDist;
+              const landColIdx = cIdx + deltaCol * landDist;
+              if (landRowIdx < 0 || landRowIdx >= BOARD_SIZE || landColIdx < 0 || landColIdx >= BOARD_SIZE) break;
 
-            // Found enemy, look for landing square
-            for (
-              let landDistance = distance + 1;
-              landDistance < BOARD_SIZE;
-              landDistance++
-            ) {
-              const landRow = row + dRow * landDistance;
-              const landCol = col + dCol * landDistance;
-              if (
-                landRow < 0 ||
-                landRow >= BOARD_SIZE ||
-                landCol < 0 ||
-                landCol >= BOARD_SIZE
-              )
-                break;
-
-              const landPiece = this.getPieceAt(landRow, landCol);
-              if (!landPiece) {
-                moves.push({
-                  fromRow: row,
-                  fromCol: col,
-                  toRow: landRow,
-                  toCol: landCol,
-                  piece: piece,
-                  isCapture: true,
-                  capturedPieces: [`${enemyRow},${enemyCol}`],
-                  isKingCapture: enemyPiece.dataset.king === "true",
+              const landSquarePiece = this.getPieceAt(landRowIdx, landColIdx);
+              if (!landSquarePiece) {
+                calculatedMovesList.push({
+                  fromRow: rIdx, fromCol: cIdx,
+                  toRow: landRowIdx, toCol: landColIdx,
+                  piece: pieceEle, isCapture: true,
+                  capturedPieces: [`${enemyRowIdx},${enemyColIdx}`],
+                  isKingCapture: enemyPieceCandidate.dataset.king === "true"
                 });
-                break; // Only take first landing square for simplicity
+                break; // Take primary landing square
               } else {
-                break; // Landing square occupied
+                break; // Path blocked
               }
             }
-            break; // Only take first enemy in this direction for simplicity
+            break; 
           }
         }
-      } else if (
-        captureSequences.length > 0 &&
-        captureSequences.length <= MAX_MOVES_PER_PIECE
-      ) {
-        // If captures are available and reasonable number, only return capture moves
-        moves.push(...captureSequences);
-      } else if (captureSequences.length > MAX_MOVES_PER_PIECE) {
-        moves.push(...captureSequences.slice(0, MAX_MOVES_PER_PIECE));
+      } else if (kingCaptureSequencesList.length > 0) {
+        // Only return captures if they are available (Mandatory Jump)
+        const cappedSequences = kingCaptureSequencesList.slice(0, MOVE_RECURSION_LIMIT);
+        calculatedMovesList.push(...cappedSequences);
       } else {
-        // No captures available, check regular long-distance moves
-        for (const [dRow, dCol] of allDirections) {
-          for (let distance = 1; distance < BOARD_SIZE; distance++) {
-            const newRow = row + dRow * distance;
-            const newCol = col + dCol * distance;
+        // No captures available; generate standard long-range non-capture moves
+        for (const [deltaRow, deltaCol] of tacticalDirections) {
+          for (let distScale = 1; distScale < BOARD_SIZE; distScale++) {
+            const targetRowIdx = rIdx + deltaRow * distScale;
+            const targetColIdx = cIdx + deltaCol * distScale;
 
-            if (
-              newRow < 0 ||
-              newRow >= BOARD_SIZE ||
-              newCol < 0 ||
-              newCol >= BOARD_SIZE
-            )
-              break;
+            if (targetRowIdx < 0 || targetRowIdx >= BOARD_SIZE || targetColIdx < 0 || targetColIdx >= BOARD_SIZE) break;
 
-            const targetPiece = this.getPieceAt(newRow, newCol);
-
-            if (!targetPiece) {
-              // Empty square - valid move
-              moves.push({
-                fromRow: row,
-                fromCol: col,
-                toRow: newRow,
-                toCol: newCol,
-                piece: piece,
-                isCapture: false,
+            const obstructingPiece = this.getPieceAt(targetRowIdx, targetColIdx);
+            if (!obstructingPiece) {
+              calculatedMovesList.push({
+                fromRow: rIdx, fromCol: cIdx,
+                toRow: targetRowIdx, toCol: targetColIdx,
+                piece: pieceEle, isCapture: false
               });
             } else {
-              // Piece blocks path
-              break;
+              break; // Blocked by piece
             }
           }
         }
       }
     } else {
-      // Regular piece movement - can capture backward but can only move forward
+      // --- STANDARD PIECE MOVEMENT LOGIC ---
+      const pawnCaptureSequencesList = this.getRegularCaptureSequences(rIdx, cIdx, pieceEle, []);
+      if (pawnCaptureSequencesList.length > 0) {
+        calculatedMovesList.push(...pawnCaptureSequencesList);
+      } else {
+        // PASSIVE MOVEMENT (Forward Only)
+        for (const [deltaRow, deltaCol] of passiveDirections) {
+          const targetRowIdx = rIdx + deltaRow;
+          const targetColIdx = cIdx + deltaCol;
 
-      // Check for multi-capture sequences in ALL directions (including backward)
-      const captureSequences = this.getRegularCaptureSequences(
-        row,
-        col,
-        piece,
-        []
-      );
-      if (captureSequences.length > 0) {
-        moves.push(...captureSequences);
-      }
-
-      // If no captures, check regular moves (forward only)
-      if (moves.length === 0) {
-        for (const [dRow, dCol] of forwardDirections) {
-          const newRow = row + dRow;
-          const newCol = col + dCol;
-
-          if (
-            newRow >= 0 &&
-            newRow < BOARD_SIZE &&
-            newCol >= 0 &&
-            newCol < BOARD_SIZE
-          ) {
-            if (!this.getPieceAt(newRow, newCol)) {
-              moves.push({
-                fromRow: row,
-                fromCol: col,
-                toRow: newRow,
-                toCol: newCol,
-                piece: piece,
-                isCapture: false,
+          if (targetRowIdx >= 0 && targetRowIdx < BOARD_SIZE && targetColIdx >= 0 && targetColIdx < BOARD_SIZE) {
+            if (!this.getPieceAt(targetRowIdx, targetColIdx)) {
+              calculatedMovesList.push({
+                fromRow: rIdx, fromCol: cIdx,
+                toRow: targetRowIdx, toCol: targetColIdx,
+                piece: pieceEle, isCapture: false
               });
             }
           }
         }
       }
     }
-
-    return moves;
+    return calculatedMovesList;
   },
 
   getPieceAt(row, col) {
@@ -6895,92 +7079,93 @@ const enhancedAI = {
     return square.querySelector(".black-piece, .red-piece, .king");
   },
 
-  // NEW: Record individual moves for analysis
-  recordLastMove(move, score) {
-    if (!move) return;
+  /**
+   * Records a move and its associated evaluation score into the temporary game memory.
+   * This data is used for end-of-game learning and analysis.
+   * 
+   * @param {Object} moveObj - The move object selected by the AI
+   * @param {number} evaluationVal - The heuristic score calculated for this move
+   */
+  recordLastMove(moveObj, evaluationVal) {
+    if (!moveObj) return;
     
-    // Get current position hash BEFORE the move
-    const position = this.getPositionHash();
+    // Capture the current board state signature
+    const positionSignHash = this.getPositionHash();
     
-    // Create detailed move record
-    const moveRecord = {
+    const moveHistoryEntry = {
       move: {
-        fromRow: move.fromRow,
-        fromCol: move.fromCol,
-        toRow: move.toRow,
-        toCol: move.toCol,
-        isCapture: move.isCapture,
-        isKing: move.piece && move.piece.dataset ? move.piece.dataset.king === "true" : false,
-        color: move.piece && move.piece.dataset ? move.piece.dataset.color : null
+        fromRow: moveObj.fromRow,
+        fromCol: moveObj.fromCol,
+        toRow: moveObj.toRow,
+        toCol: moveObj.toCol,
+        isCapture: moveObj.isCapture,
+        isKing: moveObj.piece && moveObj.piece.dataset ? moveObj.piece.dataset.king === "true" : false,
+        color: moveObj.piece && moveObj.piece.dataset ? moveObj.piece.dataset.color : null
       },
-      position: position,
-      evaluation: score || 0,
-      timestamp: Date.now(),
-      // We will fill actualOutcome later when analyzing game
+      position: positionSignHash,
+      evaluation: evaluationVal || 0,
+      timestamp: Date.now()
     };
     
-    // Push to temporary game memory
     if (!this.memory.lastGameMoves) this.memory.lastGameMoves = [];
-    this.memory.lastGameMoves.push(moveRecord);
-    
-    // Console log for debug (optional, can be removed later)
-    // console.log(`[LEARNING] Recorded move. Total: ${this.memory.lastGameMoves.length}`);
+    this.memory.lastGameMoves.push(moveHistoryEntry);
   },
 
-  // Enhanced Learning functions with deep analysis
-  recordGame(won) {
+  /**
+   * Concludes the current game, updates global statistics, and triggers learning processes.
+   * Analyzes the result (win, loss, or draw) to adapt weights and patterns in persistent memory.
+   * 
+   * @param {boolean|string} outcomeStatus - 'win', 'loss', 'draw', or boolean for AI win/loss
+   */
+  recordGame(outcomeStatus) {
     this.memory.games++;
-    const previousExperience = this.memory.experienceLevel;
+    const baselineExperienceVal = this.memory.experienceLevel;
 
-    const gameRecord = {
+    const consolidatedGameSummary = {
       gameId: this.memory.games,
-      result: won ? "win" : "loss",
+      result: outcomeStatus ? (outcomeStatus === "draw" ? "draw" : "win") : "loss",
       moves: [...this.memory.lastGameMoves],
       gameLength: this.memory.lastGameMoves.length,
       timestamp: Date.now(),
-      finalEvaluation: this.evaluatePosition("black"),
+      finalEvaluation: this.evaluatePositionEnhanced(squaresToBoard(squares), "black"),
       strategyUsed: this.getCurrentStrategy(),
-      mistakeCount: this.countMistakes(),
+      mistakeCount: this.countMistakes()
     };
 
-    this.memory.gameHistory.push(gameRecord);
-    if (this.memory.gameHistory.length > 100) {
-      this.memory.gameHistory.shift(); // Keep only last 100 games
-    }
+    // Maintain recent game history (last 100 encounters)
+    this.memory.gameHistory.push(consolidatedGameSummary);
+    if (this.memory.gameHistory.length > 100) this.memory.gameHistory.shift();
 
-    if (won === "draw") {
+    // Context-sensitive learning based on outcome
+    if (outcomeStatus === "draw") {
       this.memory.draws++;
       this.memory.experienceLevel += 2;
-    } else if (won) {
+    } else if (outcomeStatus) {
       this.memory.wins++;
-      this.learnFromVictory(gameRecord);
+      this.learnFromVictory(consolidatedGameSummary);
       this.memory.experienceLevel += 10;
     } else {
       this.memory.losses++;
-      this.learnFromDefeat(gameRecord);
+      this.learnFromDefeat(consolidatedGameSummary);
       this.memory.experienceLevel += 5;
     }
 
-    console.log(`[LEARNING] Game recorded: ${won ? 'WIN' : 'LOSS'}. Moves: ${this.memory.lastGameMoves.length}. Winning patterns: ${this.memory.winningMoveTypes.size}. Losing patterns: ${this.memory.losingMoveTypes.size}`);
+    // Secondary metric updates
+    const lastGameMoveCount = consolidatedGameSummary.gameLength;
+    this.memory.averageGameLength = 
+      (this.memory.averageGameLength * (this.memory.games - 1) + lastGameMoveCount) / this.memory.games;
 
-    const experienceGained = this.memory.experienceLevel - previousExperience;
-
-    // Update game length statistics
-    const gameLength = this.memory.lastGameMoves.length;
-    this.memory.averageGameLength =
-      (this.memory.averageGameLength * (this.memory.games - 1) + gameLength) /
-      this.memory.games;
-
-    // Enhanced learning from this game
+    // Trigger deep architectural analysis
     this.analyzeGameMoves();
     this.updatePlayerPatterns();
     this.evaluateStrategies();
-    this.adjustConfidence(won);
-    this.updateContextualLearning(gameRecord);
+    this.adjustConfidence(outcomeStatus);
+    this.updateContextualLearning(consolidatedGameSummary);
 
-    // Clear temporary game data
+    // Housekeeping: reset temporary memory
     this.memory.lastGameMoves = [];
 
+    // Persistence and UI synchronization
     this.saveMemory();
     this.displayLearningProgress();
 
@@ -6989,6 +7174,11 @@ const enhancedAI = {
     }
   },
 
+  /**
+   * Tracks and averages the AI's computation time for performance monitoring.
+   * 
+   * @param {number} durationMs - Thinking time in milliseconds
+   */
   recordThinkingTime(durationMs) {
     if (!Number.isFinite(durationMs) || durationMs <= 0) return;
 
@@ -6997,332 +7187,334 @@ const enhancedAI = {
     }
 
     this.memory.timeSpentThinking.push(durationMs);
+    // Maintain a rolling window of recent thinking times
     if (this.memory.timeSpentThinking.length > 50) {
       this.memory.timeSpentThinking.shift();
     }
 
-    const totalMs = this.memory.timeSpentThinking.reduce(
-      (sum, value) => (Number.isFinite(value) ? sum + value : sum),
+    const totalThinkingMs = this.memory.timeSpentThinking.reduce(
+      (sum, val) => (Number.isFinite(val) ? sum + val : sum),
       0
     );
 
-    const sampleCount = this.memory.timeSpentThinking.filter((value) =>
-      Number.isFinite(value)
+    const validSamplesCount = this.memory.timeSpentThinking.filter((val) =>
+      Number.isFinite(val)
     ).length;
 
     this.memory.averageThinkingTime =
-      sampleCount > 0 ? totalMs / sampleCount : 0;
+      validSamplesCount > 0 ? totalThinkingMs / validSamplesCount : 0;
   },
 
-  learnFromVictory(gameRecord) {
-    let newPositions = 0;
-    let newMoveTypes = 0;
+  /**
+   * Processes a winning game to reinforce successful move patterns and strategies.
+   * Updates positional database and successful sequence memory.
+   * 
+   * @param {Object} gameSummary - Detailed summary of the completed game
+   */
+  learnFromVictory(gameSummary) {
+    let newlyDiscoveredPositions = 0;
 
-    // Reinforce successful move patterns with enhanced analysis
-    for (let i = 0; i < gameRecord.moves.length; i++) {
-      const moveData = gameRecord.moves[i];
-      const moveType = this.getMoveType(moveData.move);
+    // Reinforce successful move patterns with enhanced influence analysis
+    for (let i = 0; i < gameSummary.moves.length; i++) {
+      const moveEntry = gameSummary.moves[i];
+      const moveStyleTag = this.getMoveType(moveEntry.move);
 
-      // Weight moves based on their position in the game
-      const gamePhase = i / gameRecord.moves.length;
-      const importance = this.calculateMoveImportance(moveData, gamePhase);
+      // Scale importance based on game phase and tactical context
+      const currentProgressRatio = i / gameSummary.moves.length;
+      const moveInfluenceWeight = this.calculateMoveImportance(moveEntry, currentProgressRatio);
 
-      if (this.memory.winningMoveTypes.has(moveType)) {
-        this.memory.winningMoveTypes.set(
-          moveType,
-          this.memory.winningMoveTypes.get(moveType) + importance
-        );
-      } else {
-        this.memory.winningMoveTypes.set(moveType, importance);
-      }
+      const existingWinWeight = this.memory.winningMoveTypes.get(moveStyleTag) || 0;
+      this.memory.winningMoveTypes.set(moveStyleTag, existingWinWeight + moveInfluenceWeight);
 
-      // Store position data for learning
-      if (moveData.position) {
-        const isNewPosition = !this.memory.positionDatabase.has(
-          moveData.position
-        );
-        if (isNewPosition) newPositions++;
+      // Position-specific learning: store and update historical evaluations
+      if (moveEntry.position) {
+        const isNewPos = !this.memory.positionDatabase.has(moveEntry.position);
+        if (isNewPos) newlyDiscoveredPositions++;
 
-        const posData = this.memory.positionDatabase.get(moveData.position) || {
+        const positionHistoryData = this.memory.positionDatabase.get(moveEntry.position) || {
           wins: 0,
           losses: 0,
           totalGames: 0,
           averageEval: 0,
         };
-        posData.wins++;
-        posData.totalGames++;
-        posData.averageEval =
-          (posData.averageEval * (posData.totalGames - 1) +
-            moveData.evaluation) /
-          posData.totalGames;
-        this.memory.positionDatabase.set(moveData.position, posData);
+        
+        positionHistoryData.wins++;
+        positionHistoryData.totalGames++;
+        positionHistoryData.averageEval =
+          (positionHistoryData.averageEval * (positionHistoryData.totalGames - 1) + moveEntry.evaluation) /
+          positionHistoryData.totalGames;
+          
+        this.memory.positionDatabase.set(moveEntry.position, positionHistoryData);
       }
 
-      // Store successful sequences
-      if (i < this.memory.lastGameMoves.length - 2) {
-        const sequence = [
-          moveData,
-          this.memory.lastGameMoves[i + 1],
-          this.memory.lastGameMoves[i + 2],
+      // Sequence learning: store short winning chains (3-move windows)
+      if (i < gameSummary.moves.length - 2) {
+        const tacticalSequence = [
+          moveEntry,
+          gameSummary.moves[i + 1],
+          gameSummary.moves[i + 2],
         ];
-        this.memory.successfulSequences.push(sequence);
+        this.memory.successfulSequences.push(tacticalSequence);
       }
     }
 
-    // Adaptive weight adjustment based on what worked
-    this.adaptWeightsFromSuccess(gameRecord);
+    // Adaptive heuristic weight tuning
+    this.adaptWeightsFromSuccess(gameSummary);
 
-    // Show top 3 most successful winning move types with their scores
-    const winningMovesArray = Array.from(this.memory.winningMoveTypes.entries())
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 3);
-
-    // Update strategy effectiveness
-    const strategy = gameRecord.strategyUsed;
-    if (this.memory.strategyEffectiveness.has(strategy)) {
-      this.memory.strategyEffectiveness.set(
-        strategy,
-        this.memory.strategyEffectiveness.get(strategy) + 1
-      );
-    } else {
-      this.memory.strategyEffectiveness.set(strategy, 1);
-    }
+    // Update strategic baseline effectiveness
+    const activeStrategyName = gameSummary.strategyUsed;
+    const currentEffectivenessScore = this.memory.strategyEffectiveness.get(activeStrategyName) || 0;
+    this.memory.strategyEffectiveness.set(activeStrategyName, currentEffectivenessScore + 1);
   },
 
-  learnFromDefeat(gameRecord) {
-    let newPositions = 0;
-    let newMoveTypes = 0;
-    const timestamp = Date.now();
+  /**
+   * Processes a losing game to analyze mistakes and adjust weights to prevent repetition.
+   * Tracks persistent patterns of failure in specific positions or tactical contexts.
+   * 
+   * @param {Object} gameSummary - Detailed summary of the completed game
+   */
+  learnFromDefeat(gameSummary) {
+    const currentTimestamp = Date.now();
 
-    // Initialize new data structures if needed
+    // Initialize supplemental failure-tracking structures if absent
     if (!this.memory.losingMovesByPosition) this.memory.losingMovesByPosition = new Map();
     if (!this.memory.losingPatternsByContext) this.memory.losingPatternsByContext = new Map();
     if (!this.memory.losingMoveTimestamps) this.memory.losingMoveTimestamps = new Map();
 
-    // Enhanced mistake analysis
-    for (let i = 0; i < gameRecord.moves.length; i++) {
-      const moveData = gameRecord.moves[i];
-      const moveType = this.getMoveType(moveData.move);
-      const contextType = this.getMoveTypeWithContext(moveData.move, moveData.position);
+    // Enhanced mistake analysis across the entire trajectory
+    for (let i = 0; i < gameSummary.moves.length; i++) {
+      const moveEntry = gameSummary.moves[i];
+      const moveStyleTag = this.getMoveType(moveEntry.move);
+      const contextualPatternTag = this.getMoveTypeWithContext(moveEntry.move, moveEntry.position);
 
-      // IMPROVED THRESHOLD: More granular categorization
-      // Severe mistakes (eval < 50): Count as +2
-      // Moderate mistakes (50-100): Count as +1
-      // Weak moves (100-150): Count as +0.5
-      let penaltyWeight = 0;
-      if (moveData.evaluation < 50) penaltyWeight = 2;
-      else if (moveData.evaluation < 100) penaltyWeight = 1;
-      else if (moveData.evaluation < 150) penaltyWeight = 0.5;
-      else penaltyWeight = 0.2; // BASELINE: Even 'good' evaluation moves get a small penalty if the game was lost
+      // IDENTIFY MISTAKE SEVERITY: More granular categorization based on evaluation drops
+      // Severe mistakes (eval < 50): High penalty
+      // Moderate mistakes (50-100): Medium penalty
+      // Weak moves (100-150): Light penalty
+      let mistakePenaltyWeight = 0;
+      if (moveEntry.evaluation < 50) mistakePenaltyWeight = 2.0;
+      else if (moveEntry.evaluation < 100) mistakePenaltyWeight = 1.0;
+      else if (moveEntry.evaluation < 150) mistakePenaltyWeight = 0.5;
+      else mistakePenaltyWeight = 0.2; // Minor penalty for even 'good' moves if the game was ultimately lost
 
-      // Track critical mistakes
-      if (moveData.evaluation < 50) {
-        const mistakeContext = {
-          moveType,
-          position: moveData.position,
-          gamePhase: i / gameRecord.moves.length,
-          evaluation: moveData.evaluation,
-          timestamp,
+      // Track critical mistakes for deep pattern recognition
+      if (moveEntry.evaluation < 50) {
+        const mistakeMetadata = {
+          moveType: moveStyleTag,
+          positionHash: moveEntry.position,
+          gamePhaseRatio: i / gameSummary.moves.length,
+          evaluationScore: moveEntry.evaluation,
+          timestamp: currentTimestamp,
         };
 
-        if (this.memory.mistakePatterns.has(moveType)) {
-          this.memory.mistakePatterns.get(moveType).push(mistakeContext);
-        } else {
-          this.memory.mistakePatterns.set(moveType, [mistakeContext]);
+        if (!this.memory.mistakePatterns.has(moveStyleTag)) {
+          this.memory.mistakePatterns.set(moveStyleTag, []);
         }
+        this.memory.mistakePatterns.get(moveStyleTag).push(mistakeMetadata);
       }
 
-      // If we lost using an opening line, reduce its score
-      if (i < 8 && moveData.position && this.memory.openingBook.has(moveData.position)) {
-        const currentScore = this.memory.openingBook.get(moveData.position);
-        this.memory.openingBook.set(moveData.position, Math.max(0, currentScore - 2));
+      // Opening-phase learning: penalize opening variations that consistently lead to losses
+      if (i < 8 && moveEntry.position && this.memory.openingBook.has(moveEntry.position)) {
+        const currentOpeningScore = this.memory.openingBook.get(moveEntry.position);
+        this.memory.openingBook.set(moveEntry.position, Math.max(0, currentOpeningScore - 2));
       }
 
-      // GLOBAL PATTERN LEARNING (existing, but improved)
-      if (penaltyWeight > 0) {
-        const currentCount = this.memory.losingMoveTypes.get(moveType) || 0;
-        this.memory.losingMoveTypes.set(moveType, currentCount + penaltyWeight);
+      // GLOBAL PATTERN PENALIZATION
+      if (mistakePenaltyWeight > 0) {
+        const currentGlobalLosingWeight = this.memory.losingMoveTypes.get(moveStyleTag) || 0;
+        this.memory.losingMoveTypes.set(moveStyleTag, currentGlobalLosingWeight + mistakePenaltyWeight);
         
-        // Track timestamp for time-decay
-        this.memory.losingMoveTimestamps.set(moveType, timestamp);
+        // Track recency for potential time-decayed learning (future enhancement)
+        this.memory.losingMoveTimestamps.set(moveStyleTag, currentTimestamp);
+
+        // POSITION-SPECIFIC PATTERN PENALIZATION
+        if (moveEntry.position) {
+          const positionalFailureKey = `${moveEntry.position}_${moveStyleTag}`;
+          const currentPosLosingWeight = this.memory.losingMovesByPosition.get(positionalFailureKey) || 0;
+          this.memory.losingMovesByPosition.set(positionalFailureKey, currentPosLosingWeight + mistakePenaltyWeight);
+        }
+
+        // CONTEXTUAL PATTERN PENALIZATION (State + Action type)
+        const currentContextLosingWeight = this.memory.losingPatternsByContext.get(contextualPatternTag) || 0;
+        this.memory.losingPatternsByContext.set(contextualPatternTag, currentContextLosingWeight + mistakePenaltyWeight);
       }
 
-      // NEW: POSITION-SPECIFIC PATTERN LEARNING
-      if (moveData.position && penaltyWeight > 0) {
-        const positionKey = `${moveData.position}_${moveType}`;
-        const currentCount = this.memory.losingMovesByPosition.get(positionKey) || 0;
-        this.memory.losingMovesByPosition.set(positionKey, currentCount + penaltyWeight);
-      }
-
-      // NEW: CONTEXT-SPECIFIC PATTERN LEARNING (game phase + move type)
-      if (penaltyWeight > 0) {
-        const currentCount = this.memory.losingPatternsByContext.get(contextType) || 0;
-        this.memory.losingPatternsByContext.set(contextType, currentCount + penaltyWeight);
-      }
-
-      // Store position data for learning (defeats)
-      if (moveData.position) {
-        const isNewPosition = !this.memory.positionDatabase.has(
-          moveData.position
-        );
-        if (isNewPosition) newPositions++;
-
-        const posData = this.memory.positionDatabase.get(moveData.position) || {
+      // Update positional database with defeat metrics
+      if (moveEntry.position) {
+        const posHistoryData = this.memory.positionDatabase.get(moveEntry.position) || {
           wins: 0,
           losses: 0,
           totalGames: 0,
           averageEval: 0,
         };
-        posData.losses++;
-        posData.totalGames++;
-        posData.averageEval =
-          (posData.averageEval * (posData.totalGames - 1) +
-            moveData.evaluation) /
-          posData.totalGames;
-        this.memory.positionDatabase.set(moveData.position, posData);
+        posHistoryData.losses++;
+        posHistoryData.totalGames++;
+        posHistoryData.averageEval =
+          (posHistoryData.averageEval * (posHistoryData.totalGames - 1) + moveEntry.evaluation) /
+          posHistoryData.totalGames;
+          
+        this.memory.positionDatabase.set(moveEntry.position, posHistoryData);
       }
     }
 
-    // Adaptive weight adjustment to avoid similar mistakes
-    this.adaptWeightsFromFailure(gameRecord);
+    // Attempt to automatically adapt heuristic weights based on failure analysis
+    this.adaptWeightsFromFailure(gameSummary);
 
-    // Show top 3 most common losing move types with their counts
-    const losingMovesArray = Array.from(this.memory.losingMoveTypes.entries())
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 3);
-
-    // Decrease strategy effectiveness
-    const strategy = gameRecord.strategyUsed;
-    if (this.memory.strategyEffectiveness.has(strategy)) {
-      this.memory.strategyEffectiveness.set(
-        strategy,
-        Math.max(0, this.memory.strategyEffectiveness.get(strategy) - 0.5)
-      );
+    // Strategy devaluation
+    const activeStrategyName = gameSummary.strategyUsed;
+    if (this.memory.strategyEffectiveness.has(activeStrategyName)) {
+      const currentScore = this.memory.strategyEffectiveness.get(activeStrategyName);
+      this.memory.strategyEffectiveness.set(activeStrategyName, Math.max(0, currentScore - 0.5));
     }
   },
 
+  /**
+   * Performs a high-level analysis of the game trajectory to extract aggregate metrics.
+   * Updates tracking for capture success rates, evaluation accuracy, and archetypal behavior.
+   */
   analyzeGameMoves() {
-    // Enhanced analysis of game patterns
-    let captureSuccessful = 0;
-    let totalCaptures = 0;
-    let evaluationAccuracy = 0;
-    let totalEvaluations = 0;
+    let successfulCaptureCount = 0;
+    let totalCapturesDetected = 0;
+    let totalEvaluationAccuracyScore = 0;
+    let evaluationSamplesCount = 0;
 
-    for (const moveData of this.memory.lastGameMoves) {
-      if (moveData.move.isCapture) {
-        totalCaptures++;
-        if (moveData.evaluation > 400) {
-          captureSuccessful++;
-        }
+    for (const moveEntry of this.memory.lastGameMoves) {
+      if (moveEntry.move.isCapture) {
+        totalCapturesDetected++;
+        // Moves evaluated highly that were indeed captures are considered 'successful' tactical insights
+        if (moveEntry.evaluation > 400) successfulCaptureCount++;
       }
 
-      // Track evaluation accuracy
-      if (moveData.actualOutcome !== undefined) {
-        const accuracyScore =
-          1 - Math.abs(moveData.evaluation - moveData.actualOutcome) / 1000;
-        evaluationAccuracy += Math.max(0, accuracyScore);
-        totalEvaluations++;
+      // Track evaluation accuracy if outcome data is available (usually filled during post-game review)
+      if (moveEntry.actualOutcome !== undefined) {
+        const deviationRatio = Math.abs(moveEntry.evaluation - moveEntry.actualOutcome) / 1000;
+        totalEvaluationAccuracyScore += Math.max(0, 1 - deviationRatio);
+        evaluationSamplesCount++;
       }
     }
 
-    // Update capture success statistics
-    if (totalCaptures > 0) {
-      this.memory.captureSuccess =
-        (this.memory.captureSuccess + captureSuccessful) / 2;
-      this.memory.captureAttempts += totalCaptures;
+    // Update capture proficiency statistics
+    if (totalCapturesDetected > 0) {
+      this.memory.captureSuccess = (this.memory.captureSuccess + successfulCaptureCount) / 2;
+      this.memory.captureAttempts += totalCapturesDetected;
     }
 
-    // Update evaluation accuracy
-    if (totalEvaluations > 0) {
-      this.memory.evaluationAccuracy =
-        (this.memory.evaluationAccuracy +
-          evaluationAccuracy / totalEvaluations) /
-        2;
+    // Update heuristic calibration accuracy
+    if (evaluationSamplesCount > 0) {
+      const gameAccuracyAverage = totalEvaluationAccuracyScore / evaluationSamplesCount;
+      this.memory.evaluationAccuracy = (this.memory.evaluationAccuracy + gameAccuracyAverage) / 2;
     }
 
-    // PERFORM BLUNDER ANALYSIS
+    // Trigger secondary analysis workers
     this.analyzeBlunders();
 
-    // REINFORCE OPENING SUCCESS
     if (this.memory.lastGameMoves.length > 5) {
       this.reinforceOpening(this.memory.lastGameMoves.slice(0, 10));
     }
 
-    // ANALYZE OPPONENT
     this.analyzeOpponentArchetype();
   },
 
+  /**
+   * Categorizes the opponent's playing style based on recent move data.
+   * This allows the AI to adapt its strategy (e.g., being more cautious against aggressive players).
+   */
   analyzeOpponentArchetype() {
-    let aggressiveMoves = 0;
-    let defensiveMoves = 0;
-    let greedyCaptures = 0;
+    let totalAggressiveActions = 0;
+    let totalDefensiveActions = 0;
+    let totalGreedyJumpsDetected = 0;
 
-    const recentGames = this.memory.gameHistory.slice(-5);
-    recentGames.forEach((game) => {
-      game.moves
-        .filter((_, i) => i % 2 === 1)
-        .forEach((m) => {
-          if (m.move.isCapture) greedyCaptures++;
-          // Archetype logic for 10x10
-          if (m.move.toRow >= 3 && m.move.toRow <= 6) aggressiveMoves++;
-          if (m.move.toRow <= 1 || m.move.toRow >= BOARD_SIZE - 2)
-            defensiveMoves++;
-        });
+    // Analyze the last 5 games for trend detection
+    const recentHistorySlice = this.memory.gameHistory.slice(-5);
+    
+    recentHistorySlice.forEach((gameSummary) => {
+      // Analyze human opponent moves (usually odd indices if AI started black/even)
+      const opponentMoves = gameSummary.moves.filter((_, idx) => idx % 2 === 1);
+      
+      opponentMoves.forEach((moveEntry) => {
+        if (moveEntry.move.isCapture) totalGreedyJumpsDetected++;
+        
+        const targetRow = moveEntry.move.toRow;
+        
+        // Heuristic: Control of rows 3-6 indicates aggression; staying at row 0/1 or 8/9 indicates defense
+        if (targetRow >= 3 && targetRow <= 6) {
+          totalAggressiveActions++;
+        } else if (targetRow <= 1 || targetRow >= BOARD_SIZE - 2) {
+          totalDefensiveActions++;
+        }
+      });
     });
 
-    if (aggressiveMoves > defensiveMoves * 2)
+    // Classify based on dominant behavior ratios
+    if (totalAggressiveActions > totalDefensiveActions * 2) {
       this.memory.opponentType = "aggressive";
-    else if (defensiveMoves > aggressiveMoves)
+    } else if (totalDefensiveActions > totalAggressiveActions) {
       this.memory.opponentType = "turtle";
-    else if (greedyCaptures > 5) this.memory.opponentType = "greedy";
-    else this.memory.opponentType = "balanced";
+    } else if (totalGreedyJumpsDetected > 5) {
+      this.memory.opponentType = "greedy";
+    } else {
+      this.memory.opponentType = "balanced";
+    }
   },
 
+  /**
+   * Identifies critical blunders where the AI's positional evaluation dropped significantly.
+   * These events are recorded for special learning focus.
+   */
   analyzeBlunders() {
-    // Track critical blunders (eval drop > 200) for special analysis
-    // but don't double-count in losingMoveTypes (already counted in learnFromDefeat)
-    if (!this.memory.criticalBlunders) this.memory.criticalBlunders = new Map();
+    if (!this.memory.criticalBlunders) {
+      this.memory.criticalBlunders = new Map();
+    }
     
-    for (let i = 1; i < this.memory.lastGameMoves.length; i++) {
-      const prevMove = this.memory.lastGameMoves[i - 1];
-      const currentMove = this.memory.lastGameMoves[i];
+    const relevantMoveChain = this.memory.lastGameMoves;
+    for (let i = 1; i < relevantMoveChain.length; i++) {
+      const moveBeforeFailure = relevantMoveChain[i - 1];
+      const moveAfterReply = relevantMoveChain[i];
 
-      // If our evaluation dropped by more than 200 points after an opponent move
-      // it means we failed to see a trap or the opponent found a great reply.
-      if (prevMove.evaluation - currentMove.evaluation > 200) {
-        const moveType = this.getMoveType(prevMove.move);
-        const contextType = this.extractMovePattern(prevMove.move);
+      // Detection threshold: an evaluation drop > 200 points after an opponent's reply
+      const evaluationDropValue = moveBeforeFailure.evaluation - moveAfterReply.evaluation;
+      
+      if (evaluationDropValue > 200) {
+        const moveStyleTag = this.getMoveType(moveBeforeFailure.move);
+        const contextualPatternTag = this.extractMovePattern(moveBeforeFailure.move);
 
-        // Track this as a critical blunder (for awareness, not penalty doubling)
-        const key = `${moveType}_${contextType}`;
-        const count = this.memory.criticalBlunders.get(key) || 0;
-        this.memory.criticalBlunders.set(key, count + 1);
+        // Record the pattern for prioritized learning
+        const blunderPatternKey = `${moveStyleTag}_${contextualPatternTag}`;
+        const existingBlunderCount = this.memory.criticalBlunders.get(blunderPatternKey) || 0;
+        this.memory.criticalBlunders.set(blunderPatternKey, existingBlunderCount + 1);
         
-        // NOTE: The penalty is already applied in learnFromDefeat with penaltyWeight
-        // DO NOT double-count by adding extra penalty here
+        // Note: Blunder penalties are integrated into learnFromDefeat scoring
       }
     }
   },
 
-  reinforceOpening(openingMoves) {
-    // If the game ended in a win, add these positions to our opening book
-    const won =
-      this.memory.gameHistory[this.memory.gameHistory.length - 1]?.result ===
-      "win";
-    if (!won) return;
+  /**
+   * Adds successful opening sequences to the opening book for prioritization in future games.
+   * 
+   * @param {Array} openingSequenceList - The first few moves of a winning game
+   */
+  reinforceOpening(openingSequenceList) {
+    const lastGameIndex = this.memory.gameHistory.length - 1;
+    const finalOutcome = this.memory.gameHistory[lastGameIndex]?.result;
+    
+    if (finalOutcome !== "win") return;
 
-    openingMoves.forEach((moveData) => {
-      const hash = moveData.boardHash;
-      if (hash) {
-        const currentVal = this.memory.openingBook.get(hash) || 0;
-        this.memory.openingBook.set(hash, currentVal + 1);
+    openingSequenceList.forEach((historyEntry) => {
+      const stateHashVal = historyEntry.position; // Use the stored board hash
+      if (stateHashVal) {
+        const currentPopularityScore = this.memory.openingBook.get(stateHashVal) || 0;
+        this.memory.openingBook.set(stateHashVal, currentPopularityScore + 1);
       }
     });
   },
 
   // New enhanced learning methods
+  /**
+   * Retrieves the current high-level strategy name based on dominant heuristic weights.
+   * 
+   * @returns {string} The name of the active strategic archetype
+   */
   getCurrentStrategy() {
-    // Determine current strategy based on weights
     if (this.weights.safety > 150) return "defensive";
     if (this.weights.mobility > 20) return "aggressive";
     if (this.weights.sideOccupation > 200) return "positional";
@@ -7330,266 +7522,333 @@ const enhancedAI = {
     return "balanced";
   },
 
+  /**
+   * Counts how many moves in the last game were identified as mistakes (evaluation < 50).
+   * 
+   * @returns {number} The total count of mistakes
+   */
   countMistakes() {
-    let mistakes = 0;
-    for (const moveData of this.memory.lastGameMoves) {
-      if (moveData.evaluation < 50) mistakes++;
+    let mistakeCounter = 0;
+    for (const moveEntry of this.memory.lastGameMoves) {
+      if (moveEntry.evaluation < 50) mistakeCounter++;
     }
-    return mistakes;
+    return mistakeCounter;
   },
 
-  calculateMoveImportance(moveData, gamePhase) {
-    let importance = 1;
+  /**
+   * Calculates the weighted importance of a specific move for learning purposes.
+   * Endgame moves and tactical captures are given higher learning priority.
+   * 
+   * @param {Object} moveEntry - The move record to evaluate
+   * @param {number} currentPhaseRatio - The current progress through the game (0.0 to 1.0)
+   * @returns {number} The calculated importance multiplier
+   */
+  calculateMoveImportance(moveEntry, currentPhaseRatio) {
+    let cumulativeImportance = 1.0;
 
-    // Critical moves in endgame are more important
-    if (gamePhase > 0.7) importance *= 1.5;
+    // Critical moves in the endgame (last 30% of the game) are prioritized
+    if (currentPhaseRatio > 0.7) cumulativeImportance *= 1.5;
 
-    // Captures are more important
-    if (moveData.move.isCapture) importance *= 1.3;
+    // Tactical captures provide high learning signals
+    if (moveEntry.move.isCapture) cumulativeImportance *= 1.3;
 
-    // High-evaluation moves are more important
-    if (moveData.evaluation > 500) importance *= 1.2;
+    // Moves that yielded high evaluation scores are considered highly instructive
+    if (moveEntry.evaluation > 500) cumulativeImportance *= 1.2;
 
-    return importance;
+    return cumulativeImportance;
   },
 
-  adaptWeightsFromSuccess(gameRecord) {
-    const learningRate = this.memory.learningRate;
+  /**
+   * Incrementally adjusts heuristic weights following a successful game.
+   * Reinforces weights associated with high-scoring tactical and positional moves.
+   * 
+   * @param {Object} gameSummary - The record of the winning game
+   */
+  adaptWeightsFromSuccess(gameSummary) {
+    const activeLearningRate = this.memory.learningRate;
 
-    // Identify which weights contributed to success
-    for (const moveData of this.memory.lastGameMoves) {
-      if (moveData.evaluation > 400) {
-        // Reinforce weights that led to good moves
-        if (moveData.move.isCapture) {
-          this.baseWeights.captureBase *= 1 + learningRate * 0.1;
+    for (const moveEntry of this.memory.lastGameMoves) {
+      if (moveEntry.evaluation > 400) {
+        // Reinforce capture aggression if captures were part of the winning path
+        if (moveEntry.move.isCapture) {
+          this.baseWeights.captureBase *= 1 + (activeLearningRate * 0.1);
         }
-        const isKing = moveData.move.piece ? (moveData.move.piece.dataset.king === "true") : moveData.move.isKing;
-        if (isKing) {
-          this.baseWeights.kingActivity *= 1 + learningRate * 0.1;
+        
+        // Reinforce king activity if kings were utilized effectively
+        const isKingMove = moveEntry.move.piece ? (moveEntry.move.piece.dataset.king === "true") : moveEntry.move.isKing;
+        if (isKingMove) {
+          this.baseWeights.kingActivity *= 1 + (activeLearningRate * 0.1);
         }
       }
     }
   },
 
-  adaptWeightsFromFailure(gameRecord) {
-    const learningRate = this.memory.learningRate;
+  /**
+   * Adjusts heuristic weights following a defeat to mitigate identified patterns of failure.
+   * Increases penalties for risky behaviors and decreases confidence in failed strategies.
+   * 
+   * @param {Object} gameSummary - The record of the losing game
+   */
+  adaptWeightsFromFailure(gameSummary) {
+    const activeLearningRate = this.memory.learningRate;
 
-    // Adjust weights to avoid repeating mistakes
-    for (const moveData of this.memory.lastGameMoves) {
-      if (moveData.evaluation < 100) {
-        // Reduce influence of weights that led to poor moves
-        if (!moveData.move.isCapture && this.baseWeights.selfDanger < 600) {
-          this.baseWeights.selfDanger *= 1 + learningRate * 0.2;
+    for (const moveEntry of this.memory.lastGameMoves) {
+      if (moveEntry.evaluation < 100) {
+        // Increase safety consciousness if pieces were lost without sufficient compensation
+        if (!moveEntry.move.isCapture && this.baseWeights.selfDanger < 600) {
+          this.baseWeights.selfDanger *= 1 + (activeLearningRate * 0.2);
         }
-        const isKing = moveData.move.piece ? (moveData.move.piece.dataset.king === "true") : moveData.move.isKing;
-        if (isKing) {
-          this.baseWeights.kingEndangerPenalty *= 1 + learningRate * 0.1;
+        
+        // Penalize reckless king deployment
+        const isKingMove = moveEntry.move.piece ? (moveEntry.move.piece.dataset.king === "true") : moveEntry.move.isKing;
+        if (isKingMove) {
+          this.baseWeights.kingEndangerPenalty *= 1 + (activeLearningRate * 0.1);
         }
       }
     }
   },
 
+  /**
+   * Analyzes the human opponent's recent move history to recognize recurring tactical patterns.
+   */
   updatePlayerPatterns() {
-    // Analyze human player's last few moves to learn patterns
     if (this.memory.lastGameMoves.length > 0) {
-      const recentMoves = this.memory.lastGameMoves.slice(-10);
-      const playerMoves = recentMoves.filter((_, index) => index % 2 === 1); // Human moves
+      const recentTrajectoryWindow = this.memory.lastGameMoves.slice(-10);
+      const humanPlayerMoves = recentTrajectoryWindow.filter((_, idx) => idx % 2 === 1);
 
-      for (const moveData of playerMoves) {
-        const pattern = this.extractMovePattern(moveData.move);
-        if (this.memory.playerPatterns.has(pattern)) {
-          this.memory.playerPatterns.set(
-            pattern,
-            this.memory.playerPatterns.get(pattern) + 1
-          );
-        } else {
-          this.memory.playerPatterns.set(pattern, 1);
-        }
+      for (const moveEntry of humanPlayerMoves) {
+        const structuralPatternTag = this.extractMovePattern(moveEntry.move);
+        const currentPatternFrequency = this.memory.playerPatterns.get(structuralPatternTag) || 0;
+        this.memory.playerPatterns.set(structuralPatternTag, currentPatternFrequency + 1);
       }
     }
   },
 
-  extractMovePattern(move) {
-    // Extract deep strategic pattern from move
-    let patterns = [];
+  /**
+   * Extracts a complex strategic pattern tag from a move based on its tactical and positional characteristics.
+   * 
+   * @param {Object} moveObj - The move to analyze
+   * @returns {string} A pipe-delimited string representing the move's identified patterns
+   */
+  extractMovePattern(moveObj) {
+    let identifiedPatternTags = [];
 
-    if (move.isCapture) patterns.push("capture");
-    if (move.isMultiCapture) patterns.push("multi_capture");
+    // Basic tactical classification
+    if (moveObj.isCapture) identifiedPatternTags.push("capture");
+    if (moveObj.isMultiCapture) identifiedPatternTags.push("multi_capture");
     
-    // Handle both live DOM element and stored move object
-    const isKing = move.piece ? (move.piece.dataset.king === "true") : move.isKing;
-    const color = move.piece ? move.piece.dataset.color : move.color;
+    const isKingPieceType = moveObj.piece ? (moveObj.piece.dataset.king === "true") : moveObj.isKing;
+    const pieceColorTag = moveObj.piece ? moveObj.piece.dataset.color : moveObj.color;
 
-    if (isKing) patterns.push("king_activity");
-    if (move.toRow === 0 || move.toRow === BOARD_SIZE - 1)
-      patterns.push("promotion_zone");
+    if (isKingPieceType) identifiedPatternTags.push("king_activity");
+    
+    // Promotion zone activity
+    if (moveObj.toRow === 0 || moveObj.toRow === BOARD_SIZE - 1) {
+      identifiedPatternTags.push("promotion_zone");
+    }
 
-    // BACK RANK ATTACK
-    if (move.toRow <= 1 && color === "red")
-      patterns.push("attacking_base");
-    if (move.toRow >= BOARD_SIZE - 2 && color === "black")
-      patterns.push("attacking_base");
+    // BACK RANK OFFENSIVE: Targeting opponent's defensive line
+    if (moveObj.toRow <= 1 && pieceColorTag === "red") identifiedPatternTags.push("attacking_base");
+    if (moveObj.toRow >= BOARD_SIZE - 2 && pieceColorTag === "black") identifiedPatternTags.push("attacking_base");
 
-    // CENTER CONTROL
-    if (
-      move.toRow >= 3 &&
-      move.toRow <= BOARD_SIZE - 4 &&
-      move.toCol >= 3 &&
-      move.toCol <= BOARD_SIZE - 4
-    )
-      patterns.push("center_push");
+    // CENTER CONTROL INFLUENCE
+    const isInsideTightCenter = (moveObj.toRow >= 3 && moveObj.toRow <= BOARD_SIZE - 4 && moveObj.toCol >= 3 && moveObj.toCol <= BOARD_SIZE - 4);
+    if (isInsideTightCenter) identifiedPatternTags.push("center_push");
 
-    // NEW: Local Density Pattern (Friendly vs Enemy)
-    const density = this.calculateLocalDensity(move.toRow, move.toCol, color);
-    if (density > 1) patterns.push("supported_advance");
-    else if (density < -1) patterns.push("isolated_plunge");
+    // LOCAL DENSITY PATTERN: Evaluates support vs isolation
+    const pieceDensityScore = this.calculateLocalDensity(moveObj.toRow, moveObj.toCol, pieceColorTag);
+    if (pieceDensityScore > 1) identifiedPatternTags.push("supported_advance");
+    else if (pieceDensityScore < -1) identifiedPatternTags.push("isolated_plunge");
 
-    // FORMATION BREAKING
-    if (move.isCapture && move.capturedPieces?.length > 1)
-      patterns.push("breakthrough");
+    // BREAKTHROUGH: Captures that disrupt formation sequences
+    if (moveObj.isCapture && moveObj.capturedPieces?.length > 1) identifiedPatternTags.push("breakthrough");
 
-    return patterns.join("|") || "positional_creep";
+    return identifiedPatternTags.join("|") || "positional_creep";
   },
 
-  calculateLocalDensity(row, col, color) {
-    let score = 0;
-    const dirs = [[-1,-1], [-1,1], [1,-1], [1,1]];
-    dirs.forEach(([dr, dc]) => {
-      const r = row + dr, c = col + dc;
-      if (r >= 0 && r < BOARD_SIZE && c >= 0 && c < BOARD_SIZE) {
-        const p = this.getPieceAt(r, c);
-        if (p) {
-          if (p.dataset.color === color) score++;
-          else score--;
+  /**
+   * Calculates the local piece density around a square.
+   * Positive scores indicate strong friendly support; negative scores indicate enemy proximity.
+   * 
+   * @param {number} rIdx - Row index of the target square
+   * @param {number} cIdx - Column index of the target square
+   * @param {string} PieceColorVal - Color of the piece whose support is being calculated
+   * @returns {number} The net local density score
+   */
+  calculateLocalDensity(rIdx, cIdx, PieceColorVal) {
+    let localDensityScore = 0;
+    const tacticalDirections = [[-1, -1], [-1, 1], [1, -1], [1, 1]];
+    
+    tacticalDirections.forEach(([deltaRow, deltaCol]) => {
+      const checkRow = rIdx + deltaRow;
+      const checkCol = cIdx + deltaCol;
+      
+      const isInBounds = (checkRow >= 0 && checkRow < BOARD_SIZE && checkCol >= 0 && checkCol < BOARD_SIZE);
+      if (isInBounds) {
+        const neighborPiece = this.getPieceAt(checkRow, checkCol);
+        if (neighborPiece) {
+          if (neighborPiece.dataset.color === PieceColorVal) localDensityScore++;
+          else localDensityScore--;
         }
       }
     });
-    return score;
+    
+    return localDensityScore;
   },
 
+  /**
+   * Identifies the single most effective strategy based on historical success rates.
+   * 
+   * @returns {string} The name of the best-performing strategy
+   */
   evaluateStrategies() {
-    // Evaluate effectiveness of different strategies
-    let bestStrategy = "balanced";
-    let bestScore = 0;
+    let optimalStrategyName = "balanced";
+    let highestEffectivenessScore = 0;
 
-    for (const [strategy, score] of this.memory.strategyEffectiveness) {
-      if (score > bestScore) {
-        bestScore = score;
-        bestStrategy = strategy;
+    for (const [strategyName, effectivenessScore] of this.memory.strategyEffectiveness) {
+      if (effectivenessScore > highestEffectivenessScore) {
+        highestEffectivenessScore = effectivenessScore;
+        optimalStrategyName = strategyName;
       }
     }
 
-    return bestStrategy;
+    return optimalStrategyName;
   },
 
-  adjustConfidence(won) {
-    const adjustment = won ? 0.05 : -0.03;
+  /**
+   * Adjusts the AI's internal confidence and learning rate based on game outcomes.
+   * Winning increases confidence (slower learning), losing decreases it (faster adaptation).
+   * 
+   * @param {boolean} hasWon - True if the AI won the last game
+   */
+  adjustConfidence(hasWon) {
+    const confidenceAdjustment = hasWon ? 0.05 : -0.03;
     this.memory.confidenceLevel = Math.max(
       0.1,
-      Math.min(0.9, this.memory.confidenceLevel + adjustment)
+      Math.min(0.9, (this.memory.confidenceLevel || 0.5) + confidenceAdjustment)
     );
 
-    // Adjust learning rate based on confidence
+    // Learning rate is inversely proportional to confidence: high confidence needs less change
     this.memory.learningRate = 0.05 + (1 - this.memory.confidenceLevel) * 0.1;
   },
 
-  updateContextualLearning(gameRecord) {
-    // Learn based on game context (material balance, game phase, etc.)
-    const context = {
-      gameLength: gameRecord.gameLength,
-      result: gameRecord.result,
-      strategy: gameRecord.strategyUsed,
-      mistakes: gameRecord.mistakeCount,
+  /**
+   * Records contextual performance data (e.g., how a strategy performs in long games).
+   * 
+   * @param {Object} gameSummary - The record of the completed game
+   */
+  updateContextualLearning(gameSummary) {
+    const contextTypeKey = `${gameSummary.strategyUsed}_${gameSummary.gameLength > 50 ? "prolonged" : "rapid"}`;
+
+    const contextData = this.memory.contextualLearning.get(contextTypeKey) || {
+      count: 0,
+      wins: 0,
+      avgMistakes: 0,
     };
 
-    const contextKey = `${gameRecord.strategyUsed}_${
-      gameRecord.gameLength > 50 ? "long" : "short"
-    }`;
+    contextData.count++;
+    contextData.wins += (gameSummary.result === "win" ? 1 : 0);
+    contextData.avgMistakes = (contextData.avgMistakes + (gameSummary.mistakeCount || 0)) / 2;
 
-    if (this.memory.contextualLearning.has(contextKey)) {
-      const existing = this.memory.contextualLearning.get(contextKey);
-      existing.count++;
-      existing.wins += gameRecord.result === "win" ? 1 : 0;
-      existing.avgMistakes =
-        (existing.avgMistakes + gameRecord.mistakeCount) / 2;
-    } else {
-      this.memory.contextualLearning.set(contextKey, {
-        count: 1,
-        wins: gameRecord.result === "win" ? 1 : 0,
-        avgMistakes: gameRecord.mistakeCount,
-      });
-    }
+    this.memory.contextualLearning.set(contextTypeKey, contextData);
   },
 
+  /**
+   * Updates the UI or console with insights into the AI's learning progress.
+   */
   displayLearningProgress() {
-    // Display every game to show progress clearly
-    const bestStrategy = this.evaluateStrategies();
+    const optimalStrategy = this.evaluateStrategies();
+    // Logic for UI updates can be added here if needed
   },
 
+  memoryLoaded: false, // flag to prevent overwriting valid data with empty init state
+
+  /**
+   * Persists the entire AI memory object to browser localStorage.
+   * Includes structural safety checks to prevent data loss during race conditions.
+   */
   saveMemory() {
-    localStorage.setItem(
-      "enhancedAI_memory",
-      JSON.stringify({
-        games: this.memory.games,
-        wins: this.memory.wins,
-        losses: this.memory.losses,
-        draws: this.memory.draws,
-        patterns: Array.from(this.memory.patterns.entries()),
-        positionDatabase: Array.from(this.memory.positionDatabase.entries()),
-        openingBook: Array.from(this.memory.openingBook.entries()),
-        endgameKnowledge: Array.from(this.memory.endgameKnowledge.entries()),
-        tacticalPatterns: Array.from(this.memory.tacticalPatterns.entries()),
-        winningMoveTypes: Array.from(this.memory.winningMoveTypes.entries()),
-        losingMoveTypes: Array.from(this.memory.losingMoveTypes.entries()),
-        averageGameLength: this.memory.averageGameLength,
-        totalMoves: this.memory.totalMoves,
-        captureSuccess: this.memory.captureSuccess,
-        captureAttempts: this.memory.captureAttempts,
-        kingPromotions: this.memory.kingPromotions,
-        difficulty: this.difficulty,
-        baseWeights: this.baseWeights,
+    // CRITICAL INTEGRITY CHECK: 
+    // Prevent overwriting a mature brain with empty initialization defaults during a crash or quick refresh.
+    if (!this.memoryLoaded && this.memory.games === 0) {
+      console.warn("[EnhancedAI] Aborting save: Memory not loaded and state is empty.");
+      return;
+    }
 
-        // Enhanced learning data
-        gameHistory: this.memory.gameHistory.slice(-50), // Save last 50 games
-        playerPatterns: Array.from(this.memory.playerPatterns.entries()),
-        evaluationAccuracy: this.memory.evaluationAccuracy,
-        timeSpentThinking: this.memory.timeSpentThinking.slice(-20),
-        averageThinkingTime: this.memory.averageThinkingTime || 0,
-        strategyEffectiveness: Array.from(
-          this.memory.strategyEffectiveness.entries()
-        ),
-        adaptiveWeights: Array.from(this.memory.adaptiveWeights.entries()),
-        positionOutcomes: Array.from(this.memory.positionOutcomes.entries()),
-        mistakePatterns: Array.from(this.memory.mistakePatterns.entries()),
-        successfulSequences: this.memory.successfulSequences.slice(-20),
-        opponentWeaknesses: Array.from(
-          this.memory.opponentWeaknesses.entries()
-        ),
-        contextualLearning: Array.from(
-          this.memory.contextualLearning.entries()
-        ),
-        learningRate: this.memory.learningRate,
-        confidenceLevel: this.memory.confidenceLevel,
-        experienceLevel: this.memory.experienceLevel,
-        
-        // NEW: Enhanced learning mechanisms
-        losingMovesByPosition: Array.from((this.memory.losingMovesByPosition || new Map()).entries()),
-        losingPatternsByContext: Array.from((this.memory.losingPatternsByContext || new Map()).entries()),
-        losingMoveTimestamps: Array.from((this.memory.losingMoveTimestamps || new Map()).entries()),
-        criticalBlunders: Array.from((this.memory.criticalBlunders || new Map()).entries()),
-      })
-    );
+    const snapshot = {
+      games: this.memory.games,
+      wins: this.memory.wins,
+      losses: this.memory.losses,
+      draws: this.memory.draws,
+      patterns: Array.from(this.memory.patterns.entries()),
+      positionDatabase: Array.from(this.memory.positionDatabase.entries()),
+      openingBook: Array.from(this.memory.openingBook.entries()),
+      endgameKnowledge: Array.from(this.memory.endgameKnowledge.entries()),
+      tacticalPatterns: Array.from(this.memory.tacticalPatterns.entries()),
+      winningMoveTypes: Array.from(this.memory.winningMoveTypes.entries()),
+      losingMoveTypes: Array.from(this.memory.losingMoveTypes.entries()),
+      averageGameLength: this.memory.averageGameLength,
+      totalMoves: this.memory.totalMoves,
+      captureSuccess: this.memory.captureSuccess,
+      captureAttempts: this.memory.captureAttempts,
+      kingPromotions: this.memory.kingPromotions,
+      difficulty: this.difficulty,
+      baseWeights: this.baseWeights,
+
+      // Trajectory and metadata history
+      gameHistory: this.memory.gameHistory.slice(-50),
+      playerPatterns: Array.from(this.memory.playerPatterns.entries()),
+      evaluationAccuracy: this.memory.evaluationAccuracy,
+      timeSpentThinking: this.memory.timeSpentThinking.slice(-20),
+      averageThinkingTime: this.memory.averageThinkingTime || 0,
+      strategyEffectiveness: Array.from(this.memory.strategyEffectiveness.entries()),
+      adaptiveWeights: Array.from(this.memory.adaptiveWeights.entries()),
+      positionOutcomes: Array.from(this.memory.positionOutcomes.entries()),
+      mistakePatterns: Array.from(this.memory.mistakePatterns.entries()),
+      successfulSequences: this.memory.successfulSequences.slice(-20),
+      opponentWeaknesses: Array.from(this.memory.opponentWeaknesses.entries()),
+      contextualLearning: Array.from(this.memory.contextualLearning.entries()),
+      learningRate: this.memory.learningRate,
+      confidenceLevel: this.memory.confidenceLevel,
+      experienceLevel: this.memory.experienceLevel,
+      
+      // Advanced Failure Analysis data
+      losingMovesByPosition: Array.from((this.memory.losingMovesByPosition || new Map()).entries()),
+      losingPatternsByContext: Array.from((this.memory.losingPatternsByContext || new Map()).entries()),
+      losingMoveTimestamps: Array.from((this.memory.losingMoveTimestamps || new Map()).entries()),
+      criticalBlunders: Array.from((this.memory.criticalBlunders || new Map()).entries()),
+    };
+
+    localStorage.setItem("enhancedAI_memory", JSON.stringify(snapshot));
   },
 
+  /**
+   * Restoration logic for AI memory. Parses serialized data from localStorage
+   * and reconstructs Map objects for efficient runtime lookups.
+   */
   loadMemory() {
     try {
-      const saved = localStorage.getItem("enhancedAI_memory");
-      if (saved) {
-        const data = JSON.parse(saved);
+      const serializedMemory = localStorage.getItem("enhancedAI_memory");
+      if (serializedMemory) {
+        const data = JSON.parse(serializedMemory);
+        
+        // Standard statistics restoration
         this.memory.games = data.games || 0;
         this.memory.wins = data.wins || 0;
         this.memory.losses = data.losses || 0;
         this.memory.draws = data.draws || 0;
+        this.memory.averageGameLength = data.averageGameLength || 0;
+        this.memory.totalMoves = data.totalMoves || 0;
+        this.memory.captureSuccess = data.captureSuccess || 0;
+        this.memory.captureAttempts = data.captureAttempts || 0;
+        this.memory.kingPromotions = data.kingPromotions || 0;
+        
+        if (data.difficulty) this.difficulty = data.difficulty;
+        if (data.baseWeights) {
+          this.baseWeights = { ...this.baseWeights, ...data.baseWeights };
+        }
+
+        // Map reconstruction for pattern and positional databases
         this.memory.patterns = new Map(data.patterns || []);
         this.memory.positionDatabase = new Map(data.positionDatabase || []);
         this.memory.openingBook = new Map(data.openingBook || []);
@@ -7597,557 +7856,463 @@ const enhancedAI = {
         this.memory.tacticalPatterns = new Map(data.tacticalPatterns || []);
         this.memory.winningMoveTypes = new Map(data.winningMoveTypes || []);
         this.memory.losingMoveTypes = new Map(data.losingMoveTypes || []);
-        this.memory.averageGameLength = data.averageGameLength || 0;
-        this.memory.totalMoves = data.totalMoves || 0;
-        this.memory.captureSuccess = data.captureSuccess || 0;
-        this.memory.captureAttempts = data.captureAttempts || 0;
-        this.memory.kingPromotions = data.kingPromotions || 0;
-        if (data.difficulty) this.difficulty = data.difficulty;
-
-        // Load learned weights if they exist
-        if (data.baseWeights) {
-          this.baseWeights = { ...this.baseWeights, ...data.baseWeights };
-        }
-
-        // Load enhanced learning data
-        this.memory.gameHistory = data.gameHistory || [];
         this.memory.playerPatterns = new Map(data.playerPatterns || []);
-        this.memory.evaluationAccuracy = data.evaluationAccuracy || 0;
-        this.memory.timeSpentThinking = data.timeSpentThinking || [];
-        this.memory.averageThinkingTime = data.averageThinkingTime || 0;
-        this.memory.strategyEffectiveness = new Map(
-          data.strategyEffectiveness || []
-        );
+        this.memory.strategyEffectiveness = new Map(data.strategyEffectiveness || []);
         this.memory.adaptiveWeights = new Map(data.adaptiveWeights || []);
         this.memory.positionOutcomes = new Map(data.positionOutcomes || []);
         this.memory.mistakePatterns = new Map(data.mistakePatterns || []);
-        this.memory.successfulSequences = data.successfulSequences || [];
         this.memory.opponentWeaknesses = new Map(data.opponentWeaknesses || []);
         this.memory.contextualLearning = new Map(data.contextualLearning || []);
+        
+        // Metadata and trajectory restoration
+        this.memory.gameHistory = data.gameHistory || [];
+        this.memory.evaluationAccuracy = data.evaluationAccuracy || 0;
+        this.memory.timeSpentThinking = data.timeSpentThinking || [];
+        this.memory.averageThinkingTime = data.averageThinkingTime || 0;
         this.memory.learningRate = data.learningRate || 0.1;
         this.memory.confidenceLevel = data.confidenceLevel || 0.5;
         this.memory.experienceLevel = data.experienceLevel || 0;
+        this.memory.successfulSequences = data.successfulSequences || [];
         
-        // NEW: Load enhanced learning mechanisms
+        // Enhanced failure analysis Maps
         this.memory.losingMovesByPosition = new Map(data.losingMovesByPosition || []);
         this.memory.losingPatternsByContext = new Map(data.losingPatternsByContext || []);
         this.memory.losingMoveTimestamps = new Map(data.losingMoveTimestamps || []);
         this.memory.criticalBlunders = new Map(data.criticalBlunders || []);
       }
-    } catch (e) {}
+      
+      // Critical flag to enable future saving operations
+      this.memoryLoaded = true;
+    } catch (parseError) {
+      console.error("[EnhancedAI] Memory restoration failed:", parseError);
+    }
   },
 
   // Enhanced learning methods for move evaluation
-  applyLearningBonus(move, baseScore) {
+  /**
+   * Applies accumulated learned bonuses or penalties to a base move evaluation.
+   * Accounts for successful patterns, failure avoidance with time-decay, and opponent archetypes.
+   * 
+   * @param {Object} moveObj - The move being evaluated
+   * @param {number} baseScoreVal - Initial heuristic score
+   * @returns {number} The calculated cumulative learning bonus
+   */
+  applyLearningBonus(moveObj, baseScoreVal) {
     try {
-      let bonus = 0;
-      const moveType = this.getMoveType(move);
-      const boardHash = this.getPositionHash();
-      const timestamp = Date.now();
-      const contextType = this.getMoveTypeWithContext(move, boardHash);
+      let cumulativeBonus = 0;
+      const moveStyleTag = this.getMoveType(moveObj);
+      const stateSignatureHash = this.getPositionHash();
+      const currentTimestampMs = Date.now();
+      const contextualPatternTag = this.getMoveTypeWithContext(moveObj, stateSignatureHash);
 
-      // 1. POSITION SPECIFIC LEARNING (Opening Book)
-      if (this.memory.openingBook && this.memory.openingBook.has(boardHash)) {
-        bonus += 150; // Strong bias towards moves we know led to wins
+      // 1. POSITION-SPECIFIC KNOWLEDGE: Opening Book Reinforcement
+      if (this.memory.openingBook && this.memory.openingBook.has(stateSignatureHash)) {
+        cumulativeBonus += 150; // Strong prioritization for moves known to be successful from this state
       }
 
-      // 2. PATTERN LEARNING (General types)
-      if (
-        this.memory.winningMoveTypes &&
-        this.memory.winningMoveTypes.has(moveType)
-      ) {
-        const successCount = this.memory.winningMoveTypes.get(moveType);
-        bonus += Math.min(200, successCount * 10); // Increased impact
+      // 2. PATTERN RECOGNITION: Reward move types associated with victory
+      if (this.memory.winningMoveTypes && this.memory.winningMoveTypes.has(moveStyleTag)) {
+        const historicalWinWeight = this.memory.winningMoveTypes.get(moveStyleTag);
+        cumulativeBonus += Math.min(200, historicalWinWeight * 10);
       }
 
-      // 3. BLUNDER AVOIDANCE WITH TIME-DECAY (Enhanced)
-      if (
-        this.memory.losingMoveTypes &&
-        this.memory.losingMoveTypes.has(moveType)
-      ) {
-        const failureCount = this.memory.losingMoveTypes.get(moveType);
-        const moveTimestamp = this.memory.losingMoveTimestamps?.get(moveType) || timestamp;
+      // 3. FAILURE AVOIDANCE: Penalize move types associated with defeat using time-decay
+      if (this.memory.losingMoveTypes && this.memory.losingMoveTypes.has(moveStyleTag)) {
+        const failureExperienceWeight = this.memory.losingMoveTypes.get(moveStyleTag);
+        const lastLosingTimestamp = this.memory.losingMoveTimestamps?.get(moveStyleTag) || currentTimestampMs;
         
-        // TIME-DECAY: Recent losses weigh more than old losses
-        // Half-life: 90 days (7776000000 ms)
-        const ageMs = timestamp - moveTimestamp;
-        const halfLifeMs = 90 * 24 * 60 * 60 * 1000;
-        const ageFactor = Math.pow(0.5, ageMs / halfLifeMs);
-        const decayedFailureCount = failureCount * ageFactor;
+        // RECENCY DECAY: Losses weight less as they get older (90-day half-life)
+        const encounterAgeMs = currentTimestampMs - lastLosingTimestamp;
+        const maturityHalfLifeMs = 90 * 24 * 60 * 60 * 1000;
+        const decayFactor = Math.pow(0.5, encounterAgeMs / maturityHalfLifeMs);
+        const effectiveFailureWeight = failureExperienceWeight * decayFactor;
         
-        // Progressive penalty: Faster early penalty, slower later
-        const basePenalty = Math.min(decayedFailureCount, 20) * 15;  // 0-300 for first 20
-        const bonusScaling = Math.max(0, Math.min(decayedFailureCount - 20, 10) * 3); // Slower for 20+
-        const totalPenalty = basePenalty + bonusScaling;
+        // Progressive penalization scale
+        const baselinePenalty = Math.min(effectiveFailureWeight, 20) * 15;
+        const extendedPenalty = Math.max(0, Math.min(effectiveFailureWeight - 20, 10) * 3);
         
-        bonus -= Math.round(totalPenalty);
+        cumulativeBonus -= Math.round(baselinePenalty + extendedPenalty);
       }
 
-      // NEW: POSITION-SPECIFIC BLUNDER AVOIDANCE
-      if (this.memory.losingMovesByPosition && boardHash) {
-        const positionKey = `${boardHash}_${moveType}`;
-        const positionFailureCount = this.memory.losingMovesByPosition.get(positionKey) || 0;
-        if (positionFailureCount > 0) {
-          // Higher penalty for moves that failed in THIS specific position
-          bonus -= Math.round(Math.min(150, positionFailureCount * 20));
+      // 4. GRANULAR FAILURE TRACKING: Position and Context specifics
+      if (this.memory.losingMovesByPosition && stateSignatureHash) {
+        const positionalFailureKey = `${stateSignatureHash}_${moveStyleTag}`;
+        const specificFailureCount = this.memory.losingMovesByPosition.get(positionalFailureKey) || 0;
+        if (specificFailureCount > 0) {
+          cumulativeBonus -= Math.round(Math.min(150, specificFailureCount * 20));
         }
       }
 
-      // NEW: CONTEXT-SPECIFIC LEARNING
-      if (this.memory.losingPatternsByContext && contextType) {
-        const contextFailureCount = this.memory.losingPatternsByContext.get(contextType) || 0;
+      if (this.memory.losingPatternsByContext && contextualPatternTag) {
+        const contextFailureCount = this.memory.losingPatternsByContext.get(contextualPatternTag) || 0;
         if (contextFailureCount > 0) {
-          // Medium penalty for moves that failed in this game context
-          bonus -= Math.round(Math.min(100, contextFailureCount * 12));
+          cumulativeBonus -= Math.round(Math.min(100, contextFailureCount * 12));
         }
       }
 
-      // Apply contextual learning
-      try {
-        const context = this.getCurrentGameContext();
-        const contextKey = `${this.getCurrentStrategy()}_${context}`;
-        if (
-          this.memory.contextualLearning &&
-          this.memory.contextualLearning.has(contextKey)
-        ) {
-          const contextData = this.memory.contextualLearning.get(contextKey);
-          const winRate = contextData.wins / contextData.count;
-          if (winRate > 0.6) bonus += 30; // Good context
-          else if (winRate < 0.4) bonus -= 30; // Bad context
-        }
-      } catch (contextError) {}
-
-      // 4. OPPONENT-SPECIFIC EXPLOITATION
-      if (
-        this.memory.opponentType === "aggressive" &&
-        moveType.includes("center_push")
-      ) {
-        bonus += 50; // Counter aggression by controlling the center
-      }
-      if (
-        this.memory.opponentType === "turtle" &&
-        moveType.includes("attacking_base")
-      ) {
-        bonus += 100; // Push harder against defensive players
+      // 5. STRATEGIC ARCHETYPE EXPLOITATION: Adapting to human behavior
+      if (this.memory.opponentType === "aggressive" && moveStyleTag.includes("center_push")) {
+        cumulativeBonus += 50; // Contest the center more aggressively
+      } else if (this.memory.opponentType === "turtle" && moveStyleTag.includes("attacking_base")) {
+        cumulativeBonus += 100; // Increase pressure on defensive setups
       }
 
-      // 5. STRENGTH REINFORCEMENT
-      if (this.memory.experienceLevel > 50) {
-        bonus *= 1 + this.memory.experienceLevel / 1000; // AI gets more "confident" in its learned bonuses as it gains experience
+      // 6. MATURITY SCALING: Confidence and Experience multipliers
+      if ((this.memory.experienceLevel || 0) > 50) {
+        cumulativeBonus *= 1 + (this.memory.experienceLevel / 1000);
       }
 
-      // 6. ADAPTIVE CONFIDENCE
-      const confidenceLevel = this.memory.confidenceLevel || 0.5;
-      bonus *= confidenceLevel;
+      const activeConfidenceRatio = this.memory.confidenceLevel || 0.5;
+      cumulativeBonus *= activeConfidenceRatio;
 
-      return Math.round(bonus);
-    } catch (error) {
+      return Math.round(cumulativeBonus);
+    } catch (criticalError) {
+      console.error("[EnhancedAI] applied bonus error:", criticalError);
       return 0;
     }
   },
 
+  /**
+   * Identifies the current phase of the game based on remaining piece density.
+   * 
+   * @returns {string} One of: 'opening', 'midgame', 'endgame'
+   */
   getCurrentGameContext() {
-    const totalPieces = this.countAllPieces();
-    if (totalPieces > 24) return "opening"; // Out of 40 pieces total
-    if (totalPieces > 12) return "midgame";
+    const activePieceCount = this.countAllPieces();
+    if (activePieceCount > 24) return "opening";
+    if (activePieceCount > 12) return "midgame";
     return "endgame";
   },
 
+  /**
+   * Utility to count all pieces currently on the board.
+   * 
+   * @returns {number} Global piece count
+   */
   countAllPieces() {
-    let count = 0;
-    const size = BOARD_SIZE || 10;
-    for (let row = 0; row < size; row++) {
-      for (let col = 0; col < size; col++) {
-        const piece = this.getPieceAt(row, col);
-        if (piece) count++;
+    let pieceCounter = 0;
+    for (let rIdx = 0; rIdx < BOARD_SIZE; rIdx++) {
+      for (let cIdx = 0; cIdx < BOARD_SIZE; cIdx++) {
+        if (this.getPieceAt(rIdx, cIdx)) pieceCounter++;
       }
     }
-    return count;
+    return pieceCounter;
   },
 
-  evaluateStrategicValue(move) {
+  /**
+   * Evaluates the strategic value of a move by considering king status, 
+   * capture yields, and positional dominance.
+   * 
+   * @param {Object} moveObj - The move to evaluate
+   * @returns {number} Score representing strategic upside
+   */
+  evaluateStrategicValue(moveObj) {
     try {
-      let value = 0;
+      let cumulativeValue = 0;
 
-      // King activity value
-      if (move.piece && move.piece.dataset.king === "true") {
-        value += 10;
+      // Bonus for preserving or utilizing kings
+      const isKingMove = moveObj.piece ? (moveObj.piece.dataset.king === "true") : moveObj.isKing;
+      if (isKingMove) cumulativeValue += 10;
+
+      // Yield from capture
+      if (moveObj.isCapture) {
+        const yieldCount = moveObj.capturedPieces ? moveObj.capturedPieces.length : 1;
+        cumulativeValue += yieldCount * 15;
       }
 
-      // Capture value
-      if (move.isCapture) {
-        value += move.capturedPieces ? move.capturedPieces.length * 15 : 15;
-      }
+      // Tactical foresight: evaluate opportunities created by this move
+      cumulativeValue += this.evaluateCaptureOpportunities(moveObj);
 
-      // PROACTIVE ANNIHILATION: Check for future capture setups
-      value += this.evaluateCaptureOpportunities(move);
+      // Positional centrality (rewarding moves closer to the 10x10 center)
+      const centerPoint = (BOARD_SIZE - 1) / 2;
+      const distFromCenter = Math.abs(centerPoint - moveObj.toRow) + Math.abs(centerPoint - moveObj.toCol);
+      cumulativeValue += Math.max(0, BOARD_SIZE - distFromCenter);
 
-      // Positional value (Center Control)
-      const center = (BOARD_SIZE - 1) / 2; // 4.5 for 10x10
-      const centerDistance =
-        Math.abs(center - move.toRow) + Math.abs(center - move.toCol);
-      value += Math.max(0, BOARD_SIZE - centerDistance);
-
-      return value;
-    } catch (error) {
+      return cumulativeValue;
+    } catch (tacticalError) {
       return 0;
     }
   },
 
-  evaluateRiskLevel(move) {
+  /**
+   * Quantifies the risk associated with a move, focusing on piece safety and exposure.
+   * 
+   * @param {Object} moveObj - The move to analyze
+   * @returns {number} Risk penalty score
+   */
+  evaluateRiskLevel(moveObj) {
     try {
-      let risk = 0;
+      let cumulativeRiskPenalty = 0;
 
-      // Check if moving into danger
-      if (
-        this.willBeUnderThreat &&
-        this.willBeUnderThreat(move.toRow, move.toCol, move.piece)
-      ) {
-        risk += 50;
+      // Check if the destination square is immediately threatened
+      if (this.willBeUnderThreat(moveObj.toRow, moveObj.toCol, moveObj.piece)) {
+        cumulativeRiskPenalty += 50;
       }
 
-      // Check if exposing other pieces
-      const exposedPieces = this.countExposedPiecesAfterMove(move);
-      risk += exposedPieces * 15;
+      // Check if the move weakens the surrounding formation
+      const newlyExposedPieceCount = this.countExposedPiecesAfterMove(moveObj);
+      cumulativeRiskPenalty += newlyExposedPieceCount * 15;
 
-      // King risk is higher
-      if (move.piece && move.piece.dataset.king === "true") {
-        risk *= 1.5;
-      }
+      // King risk is amplified
+      const isKingMove = moveObj.piece ? (moveObj.piece.dataset.king === "true") : moveObj.isKing;
+      if (isKingMove) cumulativeRiskPenalty *= 1.5;
 
-      return risk;
-    } catch (error) {
+      return cumulativeRiskPenalty;
+    } catch (riskError) {
       return 0;
     }
   },
 
-  countExposedPiecesAfterMove(move) {
-    // Simulate the move and count how many friendly pieces become exposed
-    let exposedCount = 0;
-    // This is a simplified check - could be expanded for more accuracy
-    const directions = [
-      [-1, -1],
-      [-1, 1],
-      [1, -1],
-      [1, 1],
-    ];
+  /**
+   * Estimates how many friendly pieces become vulnerable after a specific piece vacates its square.
+   * 
+   * @param {Object} moveObj - The move being simulated
+   * @returns {number} The count of newly exposed pieces
+   */
+  countExposedPiecesAfterMove(moveObj) {
+    let newlyExposedCounter = 0;
+    const tacticalDirections = [[-1, -1], [-1, 1], [1, -1], [1, 1]];
 
-    for (const [dRow, dCol] of directions) {
-      const checkRow = move.fromRow + dRow;
-      const checkCol = move.fromCol + dCol;
-      if (
-        checkRow >= 0 &&
-        checkRow < BOARD_SIZE &&
-        checkCol >= 0 &&
-        checkCol < BOARD_SIZE
-      ) {
-        const piece = this.getPieceAt(checkRow, checkCol);
-        if (piece && piece.dataset.color === "black") {
-          // Check if this piece will be exposed after our move
-          if (this.willBeExposedAfterMove(checkRow, checkCol, move)) {
-            exposedCount++;
+    for (const [deltaRow, deltaCol] of tacticalDirections) {
+      const neighborRowIdx = moveObj.fromRow + deltaRow;
+      const neighborColIdx = moveObj.fromCol + deltaCol;
+      
+      const isInBounds = (neighborRowIdx >= 0 && neighborRowIdx < BOARD_SIZE && neighborColIdx >= 0 && neighborColIdx < BOARD_SIZE);
+      if (isInBounds) {
+        const neighborPieceEle = this.getPieceAt(neighborRowIdx, neighborColIdx);
+        // Only consider AI's own pieces (black)
+        if (neighborPieceEle && neighborPieceEle.dataset.color === "black") {
+          if (this.willBeExposedAfterMove(neighborRowIdx, neighborColIdx, moveObj)) {
+            newlyExposedCounter++;
           }
         }
       }
     }
 
-    return exposedCount;
+    return newlyExposedCounter;
   },
 
-  willBeExposedAfterMove(row, col, move) {
-    // Check if piece at row,col will be exposed after the given move
-    const supportingPositions = [
-      [row - 1, col - 1],
-      [row - 1, col + 1],
-      [row + 1, col - 1],
-      [row + 1, col + 1],
+  /**
+   * Helper to determine if a specific piece at (r, c) loses all its support after moveObj is executed.
+   * 
+   * @param {number} rIdx - Row of the piece being checked
+   * @param {number} cIdx - Column of the piece being checked
+   * @param {Object} moveObj - The move causing the potential exposure
+   * @returns {boolean} True if the piece is left without support
+   */
+  willBeExposedAfterMove(rIdx, cIdx, moveObj) {
+    const tacticalPositions = [
+      [rIdx - 1, cIdx - 1], [rIdx - 1, cIdx + 1],
+      [rIdx + 1, cIdx - 1], [rIdx + 1, cIdx + 1]
     ];
 
-    let supportCount = 0;
-    for (const [suppRow, suppCol] of supportingPositions) {
-      if (
-        suppRow >= 0 &&
-        suppRow < BOARD_SIZE &&
-        suppCol >= 0 &&
-        suppCol < BOARD_SIZE
-      ) {
-        // Skip the position we're moving from
-        if (suppRow === move.fromRow && suppCol === move.fromCol) continue;
+    let validSupportCount = 0;
+    for (const [suppRow, suppCol] of tacticalPositions) {
+      const isInBounds = (suppRow >= 0 && suppRow < BOARD_SIZE && suppCol >= 0 && suppCol < BOARD_SIZE);
+      if (isInBounds) {
+        // The square we are moving FROM no longer provides support
+        if (suppRow === moveObj.fromRow && suppCol === moveObj.fromCol) continue;
 
-        const supportPiece = this.getPieceAt(suppRow, suppCol);
-        if (supportPiece && supportPiece.dataset.color === "black") {
-          supportCount++;
+        const supportingPieceEle = this.getPieceAt(suppRow, suppCol);
+        if (supportingPieceEle && supportingPieceEle.dataset.color === "black") {
+          validSupportCount++;
         }
       }
     }
 
-    return supportCount === 0; // Exposed if no support
+    return validSupportCount === 0;
   },
 
   // Multi-capture sequences for regular pieces
-  getRegularCaptureSequences(row, col, piece, capturedPieces = [], depth = 0, lastDirection = null) {
-    const MAX_DEPTH = 6;
-    const MAX_CAPTURES = 6;
-    const moves = [];
+  /**
+   * Recursive generator for multi-capture sequences available to regular pieces (pawns).
+   * Enforces rules against backtracking and respects board boundaries.
+   * 
+   * @param {number} rIdx - Current row of the jumping piece
+   * @param {number} cIdx - Current column of the jumping piece
+   * @param {HTMLElement} pieceEle - The DOM element of the piece jumping
+   * @param {Array} capturedPiecesList - Tracking list of pieces captured so far in this sequence
+   * @param {number} depthLevel - Current recursion depth
+   * @param {Array} prevDirection - The [dR, dC] used to reach the current square
+   * @returns {Array} List of completed move objects (including chains)
+   */
+  getRegularCaptureSequences(rIdx, cIdx, pieceEle, capturedPiecesList = [], depthLevel = 0, prevDirection = null) {
+    const RECURSION_LIMIT = 6;
+    const MAX_CAPTURES_PER_SEQUENCE = 6;
+    const availableMovesList = [];
 
-    if (depth > MAX_DEPTH || capturedPieces.length >= MAX_CAPTURES) {
-      return moves;
+    if (depthLevel > RECURSION_LIMIT || capturedPiecesList.length >= MAX_CAPTURES_PER_SEQUENCE) {
+      return availableMovesList;
     }
 
-    const color = piece.dataset.color;
-    const opponentColor = color === "black" ? "red" : "black";
-    const directions = [
-      [-1, -1],
-      [-1, 1],
-      [1, -1],
-      [1, 1],
-    ];
+    const currentPieceColor = pieceEle.dataset.color;
+    const opponentColorVal = (currentPieceColor === "black" ? "red" : "black");
+    const tacticalDirections = [[-1, -1], [-1, 1], [1, -1], [1, 1]];
 
-    for (const [dRow, dCol] of directions) {
-      // NEW: No backtracking (180-degree turn) in the same multi-capture sequence
-      if (lastDirection && dRow === -lastDirection[0] && dCol === -lastDirection[1]) {
-        continue;
-      }
-      const targetRow = row + dRow;
-      const targetCol = col + dCol;
-      const landingRow = row + dRow * 2;
-      const landingCol = col + dCol * 2;
+    for (const [deltaRow, deltaCol] of tacticalDirections) {
+      // RULE: No 180-degree backtracking in a single sequence
+      if (prevDirection && deltaRow === -prevDirection[0] && deltaCol === -prevDirection[1]) continue;
 
-      if (
-        landingRow >= 0 &&
-        landingRow < BOARD_SIZE &&
-        landingCol >= 0 &&
-        landingCol < BOARD_SIZE
-      ) {
-        const targetPiece = this.getPieceAt(targetRow, targetCol);
-        const landingPiece = this.getPieceAt(landingRow, landingCol);
-        const targetKey = `${targetRow},${targetCol}`;
+      const victimRowIdx = rIdx + deltaRow;
+      const victimColIdx = cIdx + deltaCol;
+      const landingRowIdx = rIdx + deltaRow * 2;
+      const landingColIdx = cIdx + deltaCol * 2;
 
-        if (
-          targetPiece &&
-          targetPiece.dataset.color === opponentColor &&
-          !capturedPieces.includes(targetKey) &&
-          !landingPiece
-        ) {
-          const newCapturedPieces = [...capturedPieces, targetKey];
-          const baseMove = {
-            fromRow: row,
-            fromCol: col,
-            toRow: landingRow,
-            toCol: landingCol,
-            piece: piece,
-            isCapture: true,
-            capturedRow: targetRow,
-            capturedCol: targetCol,
-            capturedPieces: newCapturedPieces,
+      const isLandingInBounds = (landingRowIdx >= 0 && landingRowIdx < BOARD_SIZE && landingColIdx >= 0 && landingColIdx < BOARD_SIZE);
+
+      if (isLandingInBounds) {
+        const potentialVictim = this.getPieceAt(victimRowIdx, victimColIdx);
+        const landingSquarePiece = this.getPieceAt(landingRowIdx, landingColIdx);
+        const victimPositionKey = `${victimRowIdx},${victimColIdx}`;
+
+        const isVictimOpponent = (potentialVictim && potentialVictim.dataset.color === opponentColorVal);
+        const isVictimNotAlreadyCaptured = !capturedPiecesList.includes(victimPositionKey);
+        const isLandingUnoccupied = !landingSquarePiece;
+
+        if (isVictimOpponent && isVictimNotAlreadyCaptured && isLandingUnoccupied) {
+          const updatedCapturedList = [...capturedPiecesList, victimPositionKey];
+          const primaryCaptureMove = {
+            fromRow: rIdx, fromCol: cIdx,
+            toRow: landingRowIdx, toCol: landingColIdx,
+            piece: pieceEle, isCapture: true,
+            capturedRow: victimRowIdx, capturedCol: victimColIdx,
+            capturedPieces: updatedCapturedList
           };
 
-          // Recursively check for more captures
-          const furtherCaptures = this.getRegularCaptureSequences(
-            landingRow,
-            landingCol,
-            piece,
-            newCapturedPieces,
-            depth + 1,
-            [dRow, dCol] // NEW: Pass current direction to prevent backtracking
+          // Recursively explore continuation opportunities
+          const chainContinuations = this.getRegularCaptureSequences(
+            landingRowIdx, landingColIdx, pieceEle,
+            updatedCapturedList, depthLevel + 1, [deltaRow, deltaCol]
           );
 
-          if (furtherCaptures.length > 0) {
-            // Add step-by-step captures - current capture first, then continuations
-            moves.push(baseMove);
-            moves.push(...furtherCaptures);
+          if (chainContinuations.length > 0) {
+            availableMovesList.push(primaryCaptureMove);
+            availableMovesList.push(...chainContinuations);
           } else {
-            moves.push(baseMove);
+            availableMovesList.push(primaryCaptureMove);
           }
         }
       }
     }
 
-    return moves;
+    return availableMovesList;
   },
 
   // Advanced king capture sequences - allows multiple captures in one turn
-  getKingCaptureSequences(
-    row,
-    col,
-    piece,
-    capturedPieces = [],
-    depth = 0,
-    sharedStartTime = null,
-    lastDirection = null // NEW: Track last direction to prevent 180U-turns
-  ) {
-    const MAX_DEPTH = 6; // Reduced slightly for safety
-    const MAX_CAPTURES = 10;
-    const MAX_EXECUTION_TIME = 200; // 200ms per search to prevent UI freeze
-    const startTime = sharedStartTime || Date.now();
-    const moves = [];
+  /**
+   * Advanced recursive generator for "Flying King" capture sequences.
+   * Accounts for long-range jumps, non-backtracking rules, and execution timeouts.
+   * 
+   * @param {number} rIdx - Current row of the jumping king
+   * @param {number} cIdx - Current column of the jumping king
+   * @param {HTMLElement} pieceEle - The DOM element of the king
+   * @param {Array} capturedPiecesList - List of victim position keys already claimed
+   * @param {number} depthLevel - Current recursion depth
+   * @param {number} sharedStartTimeMs - Timestamp to track across recursive calls
+   * @param {Array} prevDirection - The [dR, dC] used to reach current square
+   * @returns {Array} List of complex king move objects
+   */
+  getKingCaptureSequences(rIdx, cIdx, pieceEle, capturedPiecesList = [], depthLevel = 0, sharedStartTimeMs = null, prevDirection = null) {
+    const RECURSION_LIMIT = 6;
+    const MAX_CAPTURES_PER_SEQUENCE = 10;
+    const EXECUTION_TIMEOUT_MS = 200;
+    const globalStartTime = sharedStartTimeMs || Date.now();
+    const complexMovesList = [];
 
-    if (depth > MAX_DEPTH || capturedPieces.length >= MAX_CAPTURES) {
-      return moves;
-    }
+    // Safety and optimization checks
+    if (depthLevel > RECURSION_LIMIT || capturedPiecesList.length >= MAX_CAPTURES_PER_SEQUENCE) return complexMovesList;
+    if (Date.now() - globalStartTime > EXECUTION_TIMEOUT_MS) return complexMovesList;
 
-    // Timeout protection
-    if (Date.now() - startTime > MAX_EXECUTION_TIME) {
-      return moves;
-    }
+    const pieceColorVal = pieceEle.dataset.color;
+    const opponentColorVal = (pieceColorVal === "black" ? "red" : "black");
+    const tacticalDirections = [[-1, -1], [-1, 1], [1, -1], [1, 1]];
 
-    const color = piece.dataset.color;
-    const opponentColor = color === "black" ? "red" : "black";
-    const directions = [
-      [-1, -1],
-      [-1, 1],
-      [1, -1],
-      [1, 1],
-    ];
+    for (const [deltaRow, deltaCol] of tacticalDirections) {
+      // RULE: No 180-degree backtracking in a single sequence
+      if (prevDirection && deltaRow === -prevDirection[0] && deltaCol === -prevDirection[1]) continue;
 
-    for (const [dRow, dCol] of directions) {
-      // NEW: No backtracking (180-degree turn) in the same multi-capture sequence
-      if (lastDirection && dRow === -lastDirection[0] && dCol === -lastDirection[1]) {
-        continue;
-      }
+      if (Date.now() - globalStartTime > EXECUTION_TIMEOUT_MS) break;
 
-      // Timeout check in main loop
-      if (Date.now() - startTime > MAX_EXECUTION_TIME) {
-        break;
-      }
+      // Flying King Search: Traverse the diagonal to find a victim
+      for (let searchDist = 1; searchDist < BOARD_SIZE; searchDist++) {
+        const checkRowIdx = rIdx + deltaRow * searchDist;
+        const checkColIdx = cIdx + deltaCol * searchDist;
 
-      // RESTORED: Flying King Logic - Search for ANY enemy along the diagonal
-      for (let distance = 1; distance < BOARD_SIZE; distance++) {
-        const checkRow = row + dRow * distance;
-        const checkCol = col + dCol * distance;
+        if (checkRowIdx < 0 || checkRowIdx >= BOARD_SIZE || checkColIdx < 0 || checkColIdx >= BOARD_SIZE) break;
 
-        // Check bounds
-        if (
-          checkRow < 0 ||
-          checkRow >= BOARD_SIZE ||
-          checkCol < 0 ||
-          checkCol >= BOARD_SIZE
-        ) {
-          break;
-        }
+        const pieceOnPath = this.getPieceAt(checkRowIdx, checkColIdx);
 
-        const potentialPiece = this.getPieceAt(checkRow, checkCol);
+        if (pieceOnPath) {
+          // Blocked by friendly piece
+          if (pieceOnPath.dataset.color === pieceColorVal) break;
 
-        if (potentialPiece) {
-          // If it's our own piece, this direction is blocked
-          if (potentialPiece.dataset.color === color) {
-            break;
-          }
+          // Target spotted: Opponent piece
+          if (pieceOnPath.dataset.color === opponentColorVal) {
+            const victimKey = `${checkRowIdx},${checkColIdx}`;
 
-          // If it's an OPPONENT piece, this is our potential capture target
-          if (potentialPiece.dataset.color === opponentColor) {
-            const enemyRow = checkRow;
-            const enemyCol = checkCol;
-            const enemyKey = `${enemyRow},${enemyCol}`;
+            // Rule check: piece cannot be jumped twice in one turn
+            if (capturedPiecesList.includes(victimKey)) break;
 
-            // Skip if we already captured this piece in this sequence
-            if (capturedPieces.includes(enemyKey)) {
-              break; // Cannot jump over already captured piece
-            }
+            // Target identified at [checkRowIdx, checkColIdx]. Search for landing squares AFTER it.
+            for (let landDist = searchDist + 1; landDist < BOARD_SIZE; landDist++) {
+              const landRowIdx = rIdx + deltaRow * landDist;
+              const landColIdx = cIdx + deltaCol * landDist;
 
-            // FOUND ENEMY at [enemyRow, enemyCol]
-            // Now checking landing spots BEYOND it
-            // Start checking from the square immediately after the enemy
-            for (
-              let landDistance = distance + 1;
-              landDistance < BOARD_SIZE;
-              landDistance++
-            ) {
-              const landRow = row + dRow * landDistance;
-              const landCol = col + dCol * landDistance;
+              if (landRowIdx < 0 || landRowIdx >= BOARD_SIZE || landColIdx < 0 || landColIdx >= BOARD_SIZE) break;
 
-              if (
-                landRow < 0 ||
-                landRow >= BOARD_SIZE ||
-                landCol < 0 ||
-                landCol >= BOARD_SIZE
-              )
-                break;
+              const landingPiece = this.getPieceAt(landRowIdx, landColIdx);
+              // Landing square must be empty (ignoring self if we're technically multi-jumping)
+              if (landingPiece && landingPiece !== pieceEle) break;
 
-              const landPiece = this.getPieceAt(landRow, landCol);
-              // Landing path blocked by another piece?
-              // CRITICAL FIX: Ignore the piece that is currently jumping!
-              if (landPiece && landPiece !== piece) break;
+              // Valid capture maneuver identified
+              const updatedCapturedList = [...capturedPiecesList, victimKey];
+              const capturedKingsList = updatedCapturedList.filter((key) => {
+                const [r, c] = key.split(",").map(Number);
+                const p = this.getPieceAt(r, c);
+                return (p && p.dataset.king === "true");
+              });
 
-              // VALID LANDING SPOT
-              // ... (Recursive capture logic continues below in existing code)
-              const landKey = `${landRow},${landCol}`; // Re-declare for safety/clarity if needed or just use flow
+              const baseCaptureMove = {
+                fromRow: rIdx, fromCol: cIdx,
+                toRow: landRowIdx, toCol: landColIdx,
+                piece: pieceEle, isCapture: true,
+                capturedPieces: updatedCapturedList,
+                isMultiCapture: updatedCapturedList.length > 1,
+                capturedKingsCount: capturedKingsList.length
+              };
 
-              if (!capturedPieces.includes(landKey)) {
-                // Valid landing square - create capture move
-                const newCapturedPieces = [...capturedPieces, enemyKey];
+              // Explore subsequent capture opportunities from this landing spot
+              const recursiveContinuations = this.getKingCaptureSequences(
+                landRowIdx, landColIdx, pieceEle, updatedCapturedList, 
+                depthLevel + 1, globalStartTime, [deltaRow, deltaCol]
+              );
 
-                // Check if any captured pieces are kings
-                const capturedKings = newCapturedPieces.filter(
-                  (capturedKey) => {
-                    const [capturedRow, capturedCol] = capturedKey
-                      .split(",")
-                      .map(Number);
-                    const capturedPiece = this.getPieceAt(
-                      capturedRow,
-                      capturedCol
-                    );
-                    return (
-                      capturedPiece && capturedPiece.dataset.king === "true"
-                    );
-                  }
-                );
-
-                const baseMove = {
-                  fromRow: row,
-                  fromCol: col,
-                  toRow: landRow,
-                  toCol: landCol,
-                  piece: piece,
-                  isCapture: true,
-                  capturedPieces: newCapturedPieces,
-                  isMultiCapture: newCapturedPieces.length > 1,
-                  capturedKingsCount: capturedKings.length, // Track king captures
-                };
-
-                // Check if more captures are possible from the landing position
-                const furtherCaptures = this.getKingCaptureSequences(
-                  landRow,
-                  landCol,
-                  piece,
-                  newCapturedPieces,
-                  depth + 1,
-                  startTime,
-                  [dRow, dCol] // NEW: Pass current direction to prevent backtracking
-                );
-
-                if (furtherCaptures.length > 0) {
-                  // FIX: Flatten the recursive moves to start from the current origin
-                  // This ensures that deep capture sequences are seen as valid moves from the start position
-                  // and correctly counted for mandatory capture logic (resolving "unclickable king" bug).
-                  furtherCaptures.forEach((nextMove) => {
-                    moves.push({
-                      ...baseMove,
-                      toRow: nextMove.toRow,
-                      toCol: nextMove.toCol,
-                      capturedPieces: nextMove.capturedPieces,
-                      capturedKingsCount: nextMove.capturedKingsCount,
-                      isMultiCapture: true,
-                    });
+              if (recursiveContinuations.length > 0) {
+                // FLATTENING: Map recursive chains to the original jumping position
+                recursiveContinuations.forEach((sequentialMove) => {
+                  complexMovesList.push({
+                    ...baseCaptureMove,
+                    toRow: sequentialMove.toRow,
+                    toCol: sequentialMove.toCol,
+                    capturedPieces: sequentialMove.capturedPieces,
+                    capturedKingsCount: sequentialMove.capturedKingsCount,
+                    isMultiCapture: true
                   });
-
-                  // Also add the base move to allow step-by-step if needed, 
-                  // though it may be filtered out by max-capture rules
-                  moves.push(baseMove);
-                } else {
-                  moves.push(baseMove);
-                }
+                });
+                // Also report the intermediate step
+                complexMovesList.push(baseCaptureMove);
+              } else {
+                complexMovesList.push(baseCaptureMove);
               }
             }
-            // After processing this enemy, we break because we can't jump OVER a piece to find another enemy in the same line without landing first
+            // Cannot jump over two pieces or piece after victim must be reached manually
             break;
           }
         }
       }
-      // Continue to next direction
     }
 
-    return moves;
+    return complexMovesList;
   },
 };
 
@@ -8163,7 +8328,7 @@ function initGame() {
   enhancedAI.lastMoveFromRow = null;
   enhancedAI.lastMoveFromCol = null;
 
-  loadPanelStats();
+  // loadPanelStats(); // REMOVED: Caused stale stats on new game board (refresh bug)
 
   // Initialize game tracking for API
   gameId = generateGameId();
@@ -8369,8 +8534,12 @@ async function sendGameResultToAPI(winner) {
       gameResultSent = true;
       sentGames.push(gameId);
       sessionStorage.setItem("sentGameIds", JSON.stringify(sentGames));
+    } else {
+      console.warn("⚠️ AI result submission failed:", resp ? resp.status : "No response");
     }
-  } catch (error) {}
+  } catch (error) {
+    console.error("❌ AI result submission error:", error);
+  }
 }
 
 // Resume learning worker
@@ -8405,6 +8574,10 @@ function addToTrajectory(beforeState, move, afterState, playerColor) {
     player: playerColor || "unknown",
     reward: 0,
     heuristic_score: hScore,
+    heuristic_move: {
+      from: [move.fromRow, move.fromCol],
+      to: [move.toRow, move.toCol],
+    },
   });
 }
 
@@ -8661,7 +8834,8 @@ function movePiece(move) {
           toRow,
           toCol,
           piece,
-          alreadyCaptured
+          alreadyCaptured,
+          lastJumpDirection
         );
         if (furtherCaptures.length > 0) {
           // Must continue capturing - delay promotion
@@ -8673,6 +8847,9 @@ function movePiece(move) {
           piece.classList.add("selected");
           highlightValidMoves(toRow, toCol);
           recordTrajectoryIfNeeded();
+          
+          // Continuous monitoring
+          performPeriodicDefenseEvaluation(moveCount);
           return; // Don't promote yet - continue capturing
         }
       }
@@ -8704,7 +8881,8 @@ function movePiece(move) {
       toRow,
       toCol,
       piece,
-      alreadyCaptured
+      alreadyCaptured,
+      lastJumpDirection
     );
     if (furtherCaptures.length > 0) {
       mustContinueCapture = true;
@@ -8717,6 +8895,9 @@ function movePiece(move) {
       piece.classList.add("selected");
       highlightValidMoves(toRow, toCol);
       recordTrajectoryIfNeeded();
+      
+      // Continuous monitoring
+      performPeriodicDefenseEvaluation(moveCount);
       return; // Don't end the turn - continue capture sequence
     }
   }
@@ -8725,6 +8906,10 @@ function movePiece(move) {
   mustContinueCapture = false;
   forcedCapturePiece = null;
   lastJumpDirection = null; // Reset jump direction at end of turn
+  
+  // Continuous monitoring for regular turns
+  performPeriodicDefenseEvaluation(moveCount);
+  
   endTurn();
   // Ensure win check happens after all DOM updates are complete
   setTimeout(() => checkForWin(), 0);
@@ -8769,11 +8954,18 @@ function performPeriodicDefenseEvaluation(moveNumber) {
   defensiveState.currentHealth = snapshot.defensiveHealth;
   defensiveState.threatLevel = snapshot.riskLevel;
   defensiveState.healthTrend = snapshot.trend;
-  defensiveState.lastCheckMove = moveNumber;
-  defensiveState.nextCheckMove = moveNumber + PERIODIC_EVAL_INTERVAL;
+  defensiveState.peakHealth = Math.max(defensiveState.peakHealth, snapshot.defensiveHealth);
+  defensiveState.minHealth = Math.min(defensiveState.minHealth, snapshot.defensiveHealth);
+  
   const bar = "█".repeat(Math.round(snapshot.defensiveHealth / 10)) + 
               "░".repeat(10 - Math.round(snapshot.defensiveHealth / 10));
+  
+  // Console logging for debugging
   console.log(`Health: ${snapshot.defensiveHealth.toFixed(0)}/100 [${bar}]`);
+  
+  // CRITICAL: Trigger UI update immediately after evaluation
+  updateAIStatsDisplay();
+
   console.log(`Threat: ${snapshot.riskLevel} | Formation: ${snapshot.formationScore.toFixed(0)} | Pieces: ${snapshot.pieceCount}`);
   if (snapshot.riskLevel === "critical") {
     console.log(`⚠️ CRITICAL: Defense failing! Health: ${snapshot.defensiveHealth.toFixed(0)}`);
@@ -8783,79 +8975,124 @@ function performPeriodicDefenseEvaluation(moveNumber) {
   }
 }
 
+/**
+ * Count gaps in the defensive formation.
+ * A gap is an empty square surrounded by at least two friendly pieces.
+ * 
+ * @returns {number} The count of gaps
+ */
 function countDefensiveGaps() {
-  let gaps = 0;
-  for (let r = 0; r < BOARD_SIZE; r++) {
-    for (let c = 0; c < BOARD_SIZE; c++) {
-      const piece = enhancedAI.getPieceAt(r, c);
-      if (!piece) {
-        const adjacent = [
-          enhancedAI.getPieceAt(r-1, c-1),
-          enhancedAI.getPieceAt(r-1, c+1),
-          enhancedAI.getPieceAt(r+1, c-1),
-          enhancedAI.getPieceAt(r+1, c+1)
+  let gapCounter = 0;
+  for (let rIdx = 0; rIdx < BOARD_SIZE; rIdx++) {
+    for (let cIdx = 0; cIdx < BOARD_SIZE; cIdx++) {
+      const pieceEle = getPieceAt(rIdx, cIdx);
+      if (!pieceEle) {
+        const neighbors = [
+          getPieceAt(rIdx - 1, cIdx - 1),
+          getPieceAt(rIdx - 1, cIdx + 1),
+          getPieceAt(rIdx + 1, cIdx - 1),
+          getPieceAt(rIdx + 1, cIdx + 1)
         ].filter(p => p && p.dataset.color === "black");
-        if (adjacent.length >= 2) gaps++;
+        
+        if (neighbors.length >= 2) gapCounter++;
       }
     }
   }
-  return gaps;
+  return gapCounter;
 }
 
+/**
+ * Count pieces that have no friendly support.
+ * 
+ * @returns {number} The count of isolated pieces
+ */
 function countIsolatedPieces() {
-  let isolated = 0;
-  document.querySelectorAll(".black-piece").forEach(piece => {
-    const row = parseInt(piece.dataset.row);
-    const col = parseInt(piece.dataset.col);
-    const support = [
-      enhancedAI.getPieceAt(row-1, col-1),
-      enhancedAI.getPieceAt(row-1, col+1),
-      enhancedAI.getPieceAt(row+1, col-1),
-      enhancedAI.getPieceAt(row+1, col+1)
+  let isolatedCounter = 0;
+  document.querySelectorAll(".black-piece").forEach(pieceEle => {
+    const rIdx = parseInt(pieceEle.dataset.row);
+    const cIdx = parseInt(pieceEle.dataset.col);
+    const supportCount = [
+      getPieceAt(rIdx - 1, cIdx - 1),
+      getPieceAt(rIdx - 1, cIdx + 1),
+      getPieceAt(rIdx + 1, cIdx - 1),
+      getPieceAt(rIdx + 1, cIdx + 1)
     ].filter(p => p && p.dataset.color === "black").length;
-    if (support === 0) isolated++;
+    
+    if (supportCount === 0) isolatedCounter++;
   });
-  return isolated;
+  return isolatedCounter;
 }
 
+/**
+ * Count pieces currently under direct attack by the opponent.
+ * 
+ * @returns {number} The count of threatened pieces
+ */
 function countThreatenedPieces() {
-  let threatened = 0;
-  document.querySelectorAll(".black-piece").forEach(piece => {
-    const row = parseInt(piece.dataset.row);
-    const col = parseInt(piece.dataset.col);
-    if (enhancedAI.willBeUnderThreat(row, col, piece)) {
-      threatened++;
+  let threatenedCounter = 0;
+  const activeBoardState = getBoardStateArray();
+  
+  document.querySelectorAll(".black-piece").forEach(pieceEle => {
+    const rIdx = parseInt(pieceEle.dataset.row);
+    const cIdx = parseInt(pieceEle.dataset.col);
+    
+    // Use the robust enhancedAI logic for threat detection
+    if (enhancedAI.isPieceUnderAttack(activeBoardState, rIdx, cIdx, "black")) {
+      threatenedCounter++;
     }
   });
-  return threatened;
+  return threatenedCounter;
 }
 
+/**
+ * Calculate the total number of distinct threats across all friendly pieces.
+ * 
+ * @returns {number} Total threat count (capped at 20)
+ */
 function countTotalThreats() {
-  let total = 0;
-  document.querySelectorAll(".black-piece").forEach(piece => {
-    const row = parseInt(piece.dataset.row);
-    const col = parseInt(piece.dataset.col);
-    const threats = enhancedAI.countThreatsTo(row, col, piece);
-    total += threats;
+  let totalThreatAccumulator = 0;
+  const activeBoardState = getBoardStateArray();
+  
+  document.querySelectorAll(".black-piece").forEach(pieceEle => {
+    const rIdx = parseInt(pieceEle.dataset.row);
+    const cIdx = parseInt(pieceEle.dataset.col);
+    const pieceDataObj = {
+      color: "black",
+      king: pieceEle.dataset.king === "true"
+    };
+    
+    const threatsAtPos = enhancedAI.countThreatsEnhanced(activeBoardState, rIdx, cIdx, pieceDataObj);
+    totalThreatAccumulator += threatsAtPos;
   });
-  return Math.min(total, 20);
+  return Math.min(totalThreatAccumulator, 20);
 }
 
+/**
+ * Calculate a percentage score representing overall piece safety.
+ * 
+ * @returns {number} Safety score from 0-100
+ */
 function calculateSafetyScore() {
-  const threatened = countThreatenedPieces();
-  const total = document.querySelectorAll(".black-piece").length;
-  return total === 0 ? 0 : ((total - threatened) / total) * 100;
+  const threatenedCount = countThreatenedPieces();
+  const totalPiecesCount = document.querySelectorAll(".black-piece").length;
+  return totalPiecesCount === 0 ? 0 : ((totalPiecesCount - threatenedCount) / totalPiecesCount) * 100;
 }
 
+/**
+ * Evaluate the defensive strength of the back rank (home row).
+ * 
+ * @returns {number} The count of pieces on the back rows
+ */
 function evaluateBackRankStrength() {
-  let count = 0;
-  for (let c = 0; c < BOARD_SIZE; c++) {
-    for (let r = 8; r < BOARD_SIZE; r++) {
-      const piece = enhancedAI.getPieceAt(r, c);
-      if (piece && piece.dataset.color === "black") count++;
+  let backRankCounter = 0;
+  for (let cIdx = 0; cIdx < BOARD_SIZE; cIdx++) {
+    // Check rows 8 and 9 (Black's starting back rows on 10x10 board)
+    for (let rIdx = 8; rIdx < BOARD_SIZE; rIdx++) {
+      const pieceEle = getPieceAt(rIdx, cIdx);
+      if (pieceEle && pieceEle.dataset.color === "black") backRankCounter++;
     }
   }
-  return count;
+  return backRankCounter;
 }
 
 function analyzeGameDefense() {
@@ -8994,11 +9231,6 @@ async function makeAIMove() {
 
         await new Promise((resolve) => setTimeout(resolve, 400));
         movePiece(bestMove);
-
-        // Record move metrics for periodic defense evaluation
-        if (moveCount % PERIODIC_EVAL_INTERVAL === 0) {
-          performPeriodicDefenseEvaluation(moveCount);
-        }
 
         enhancedAI.lastMoveFromRow = bestMove.fromRow;
         enhancedAI.lastMoveFromCol = bestMove.fromCol;
@@ -9252,96 +9484,64 @@ function findContinuationCaptures(board, row, col, piece, lastDirection = null) 
 function findPossibleCaptures(row, col, piece, alreadyCaptured = [], lastDir = null) {
   const moves = [];
   const isKing = piece.dataset.king === "true";
-  const opponentColor = piece.dataset.color === "red" ? "black" : "red";
-  const directions = [
-    [-1, -1],
-    [-1, 1],
-    [1, -1],
-    [1, 1],
-  ];
- 
+  
   if (isKing) {
     // King multi-capture logic - pass already captured pieces AND last direction
     return enhancedAI.getKingCaptureSequences(row, col, piece, alreadyCaptured, 0, null, lastDir);
   } else {
-    // Regular piece multi-capture chain generation
-    // Build capture sequences step-by-step to support continuation
-    function buildCaptureChains(r, c, capturedSoFar) {
-      const opponentColor = piece.dataset.color === "red" ? "black" : "red";
-      const directions = [
-        [-1, -1],
-        [-1, 1],
-        [1, -1],
-        [1, 1],
-      ];
+    // Regular piece multi-capture chain generation with backtracking prevention
+    function buildCaptureChains(r, c, capturedSoFar, prevDir = null) {
+      const currentPieceColor = piece.dataset.color;
+      const opponentColorVal = (currentPieceColor === "red" ? "black" : "red");
+      const tacticalDirections = [[-1, -1], [-1, 1], [1, -1], [1, 1]];
+      const availableCapturesList = [];
 
-      const availableCaptures = [];
+      for (const [deltaRow, deltaCol] of tacticalDirections) {
+        // RULE: No 180-degree backtracking in a single multi-capture chain
+        if (prevDir && deltaRow === -prevDir[0] && deltaCol === -prevDir[1]) continue;
 
-      for (const [dRow, dCol] of directions) {
-        const middleRow = r + dRow;
-        const middleCol = c + dCol;
-        const jumpRow = r + dRow * 2;
-        const jumpCol = c + dCol * 2;
+        const victimRowIdx = r + deltaRow;
+        const victimColIdx = c + deltaCol;
+        const jumpRowIdx = r + deltaRow * 2;
+        const jumpColIdx = c + deltaCol * 2;
 
-        if (
-          jumpRow >= 0 &&
-          jumpRow < BOARD_SIZE &&
-          jumpCol >= 0 &&
-          jumpCol < BOARD_SIZE
-        ) {
-          const middlePiece = getPieceAt(middleRow, middleCol);
-          const landSquare = getPieceAt(jumpRow, jumpCol);
-          const middleKey = `${middleRow},${middleCol}`;
-          const alreadyCaptured = capturedSoFar.includes(middleKey);
+        const isJumpInBounds = (jumpRowIdx >= 0 && jumpRowIdx < BOARD_SIZE && jumpColIdx >= 0 && jumpColIdx < BOARD_SIZE);
 
-          if (
-            middlePiece &&
-            middlePiece.dataset.color === opponentColor &&
-            !landSquare &&
-            !alreadyCaptured
-          ) {
-            const newCapturedList = [...capturedSoFar, middleKey];
+        if (isJumpInBounds) {
+          const victimPieceEle = getPieceAt(victimRowIdx, victimColIdx);
+          const landingSquareEle = getPieceAt(jumpRowIdx, jumpColIdx);
+          const victimPositionKey = `${victimRowIdx},${victimColIdx}`;
+          const isVictimAlreadyClaimed = capturedSoFar.includes(victimPositionKey);
 
-            // Create the move for THIS capture
-            const captureMove = {
-              fromRow: row,
-              fromCol: col,
-              toRow: jumpRow,
-              toCol: jumpCol,
-              piece: piece,
-              isCapture: true,
-              capturedRow: middleRow,
-              capturedCol: middleCol,
-              capturedPieces: newCapturedList,
-              isKingCapture: middlePiece.dataset.king === "true",
+          if (victimPieceEle && victimPieceEle.dataset.color === opponentColorVal && !landingSquareEle && !isVictimAlreadyClaimed) {
+            const updatedCapturedList = [...capturedSoFar, victimPositionKey];
+            const primaryCaptureRecord = {
+              fromRow: row, fromCol: col,
+              toRow: jumpRowIdx, toCol: jumpColIdx,
+              piece: piece, isCapture: true,
+              capturedRow: victimRowIdx, capturedCol: victimColIdx,
+              capturedPieces: updatedCapturedList,
+              isKingCapture: victimPieceEle.dataset.king === "true",
             };
 
-            // Check if more captures are possible from the landing position
-            const furtherCaptures = buildCaptureChains(
-              jumpRow,
-              jumpCol,
-              newCapturedList
-            );
+            // Explore further chain possibilities from landing site
+            const sequentialCaptures = buildCaptureChains(jumpRowIdx, jumpColIdx, updatedCapturedList, [deltaRow, deltaCol]);
 
-            if (furtherCaptures.length > 0) {
-              console.log("findPossibleCaptures: continuation from", jumpRow, jumpCol, "has", furtherCaptures.length, "continuations");
-              // There are continuation captures - add current capture first, then continuations
-              availableCaptures.push(captureMove);
-              availableCaptures.push(...furtherCaptures);
+            if (sequentialCaptures.length > 0) {
+              availableCapturesList.push(primaryCaptureRecord);
+              availableCapturesList.push(...sequentialCaptures);
             } else {
-              // No more captures - this is a terminal move
-              availableCaptures.push(captureMove);
+              availableCapturesList.push(primaryCaptureRecord);
             }
           }
         }
       }
-
-      return availableCaptures;
+      return availableCapturesList;
     }
 
-    // Start building chains from this piece with already captured pieces
-    const allCaptures = buildCaptureChains(row, col, alreadyCaptured);
-    moves.push(...allCaptures);
+    // Initialize chain building, respecting the incoming lastDir (if any)
+    const finalCaptureSequence = buildCaptureChains(row, col, alreadyCaptured, lastDir);
+    moves.push(...finalCaptureSequence);
   }
   return moves;
 }
@@ -9636,20 +9836,20 @@ async function resetGame() {
   // This integrates with the auto-launcher for seamless gameplay
   if (!servicesStarted && !servicesOffline) {
     // Show that we're attempting to start services
-    showMessage("[AUTO-LAUNCH] Starting backend services...", "info");
+    showMessage("starting backend", "info");
     
     const started = await startServices();
     
     if (started) {
       // Services started successfully
-      showMessage("[AUTO-LAUNCH] Services ready! Using neural network AI", "success");
+      showMessage("Services ready!", "success");
     } else {
       // Services not available - will use local AI
-      showMessage("[AUTO-LAUNCH] Using local AI (services will auto-start next game)", "info");
+      showMessage("Using local AI", "info");
     }
   } else if (servicesOffline) {
     // Already in offline mode, stay there
-    showMessage("[OFFLINE MODE] Playing with local AI", "info");
+    showMessage("Playing with local AI", "info");
   }
 
   // Try to auto-resume learning if API is available

@@ -16,7 +16,7 @@ if not exist ".venv" (
     exit /b 1
 )
 
-REM Start the service controller
-python service_controller.py
+REM Start the service controller (auto-launcher)
+python auto_launcher.py
 
 pause

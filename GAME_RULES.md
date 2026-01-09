@@ -246,7 +246,8 @@ Moves are recorded with:
 
 ### Q: Is a game ever a draw?
 **A:** In this implementation, games continue until one player loses. Standard draw rules (like move limits) are not currently implemented.
-
+### Q: Can a King lands between two opponent pieces?
+**A:** yes, a king can land between two opponent pieces, but it can't capture,both in the same turn, he first capture the piece, the turns end, and then he can make the other capture in the opposite direction in the next turn.
 ---
 
 *Last Updated: December 30, 2025*
