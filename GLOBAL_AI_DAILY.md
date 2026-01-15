@@ -23,6 +23,8 @@ This guide lets you host the game as a **static site** (GitHub Pages / Vercel / 
    - Project URL
    - Service Role Key
 
+Important: for the Edge Function, you will store the Service Role Key under the name `SERVICE_ROLE_KEY`.
+
 ### 2) Create the database tables
 
 1. Open Supabase → **SQL Editor**.
@@ -36,7 +38,15 @@ This guide lets you host the game as a **static site** (GitHub Pages / Vercel / 
 ### 4) Deploy the Edge Function (submit-game)
 
 1. Install Supabase CLI on your computer.
-2. In this repo, deploy the function in `supabase/functions/submit-game`.
+2. Link the repo to your Supabase project.
+3. Set the Edge Function secret:
+
+- `supabase secrets set SERVICE_ROLE_KEY=...`
+
+4. Deploy the function (with JWT verification disabled so a static website can call it):
+
+- `supabase functions deploy submit-game --no-verify-jwt`
+
 3. After deploy, you’ll get a URL like:
    - `https://YOURPROJECT.functions.supabase.co/submit-game`
 

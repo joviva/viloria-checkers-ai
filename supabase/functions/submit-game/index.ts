@@ -40,11 +40,15 @@ serve(async (req) => {
   // NOTE: `SUPABASE_URL` is provided by the Supabase Edge Functions runtime.
   // The CLI blocks setting secrets that start with `SUPABASE_`, so we use
   // a non-reserved name for the service role key.
-  const supabaseUrl =
+  const supabaseUrlRaw =
     Deno.env.get("SUPABASE_URL") ?? Deno.env.get("SUPABASE_PROJECT_URL");
-  const serviceKey =
+  const serviceKeyRaw =
     Deno.env.get("SERVICE_ROLE_KEY") ??
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+
+  const supabaseUrl = supabaseUrlRaw?.trim();
+  const serviceKey = serviceKeyRaw?.replace(/[^A-Za-z0-9._-]/g, "");
+
   if (!supabaseUrl || !serviceKey) {
     return json(500, {
       error:
