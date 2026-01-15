@@ -37,11 +37,18 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return json(200, { ok: true });
   if (req.method !== "POST") return json(405, { error: "POST only" });
 
-  const supabaseUrl = Deno.env.get("SUPABASE_URL");
-  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  // NOTE: `SUPABASE_URL` is provided by the Supabase Edge Functions runtime.
+  // The CLI blocks setting secrets that start with `SUPABASE_`, so we use
+  // a non-reserved name for the service role key.
+  const supabaseUrl =
+    Deno.env.get("SUPABASE_URL") ?? Deno.env.get("SUPABASE_PROJECT_URL");
+  const serviceKey =
+    Deno.env.get("SERVICE_ROLE_KEY") ??
+    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   if (!supabaseUrl || !serviceKey) {
     return json(500, {
-      error: "Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY",
+      error:
+        "Missing SUPABASE_URL (or SUPABASE_PROJECT_URL) or SERVICE_ROLE_KEY",
     });
   }
 
