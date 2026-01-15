@@ -1,0 +1,10 @@
+# Production HTTPS reverse proxy for the game.
+
+# Replace "your-domain.com" with your real domain.
+
+# Caddy will automatically obtain and renew TLS certificates.
+
+your-domain.com {
+encode gzip
+reverse_proxy frontend:80
+}

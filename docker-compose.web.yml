@@ -1,0 +1,43 @@
+services:
+  frontend:
+    build:
+      context: .
+      dockerfile: Frontend.Dockerfile
+    ports:
+      - "8080:80"
+    depends_on:
+      - api
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+
+  # Uses your published backend image (Option B)
+  api:
+    image: ${CHECKERS_AI_IMAGE}
+    command: uvicorn api.main:app --host 0.0.0.0 --port 8000
+    expose:
+      - "8000"
+    volumes:
+      - ./data:/app/data
+      - ./checkpoints:/app/checkpoints
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+
+  worker:
+    image: ${CHECKERS_AI_IMAGE}
+    command: python -m learning.worker
+    depends_on:
+      - api
+    volumes:
+      - ./data:/app/data
+      - ./checkpoints:/app/checkpoints
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+
+  # Optional: auto-update running containers when a new image is published.
+  # Requires Docker Engine access to the socket (typical on Linux servers).
+  watchtower:
+    image: containrrr/watchtower:latest
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: --interval 300 --cleanup --label-enable
+    restart: unless-stopped

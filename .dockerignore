@@ -1,0 +1,19 @@
+.git/
+.venv/
+**pycache**/ \*_/**pycache**/
+_.pyc
+_.pyo
+_.pyd
+\*.log
+
+# Local data/checkpoints are mounted as volumes in docker-compose
+
+data/
+checkpoints/
+
+# VS Code / OS
+
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

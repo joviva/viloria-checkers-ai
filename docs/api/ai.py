@@ -5,6 +5,8 @@ import torch
 import numpy as np
 import os
 import json
+import time
+import threading
 
 MODEL_VERSION = "v0.001"
 replay_buffer = ReplayBuffer()
@@ -13,6 +15,16 @@ replay_buffer = ReplayBuffer()
 # The live model is read-only and synced from the training model
 learner = None  # Will be set by learning worker
 model = PolicyValueNet()  # Fallback model if learner not available
+
+# If the API and worker are in different processes (typical for deployment),
+# the API won't receive the learner instance. In that case, we support
+# hot-reloading the checkpoint file whenever the worker saves a new one.
+_checkpoint_lock = threading.Lock()
+_checkpoint_last_mtime: float | None = None
+_checkpoint_last_check_ts: float = 0.0
+_checkpoint_min_check_interval_sec: float = float(
+    os.getenv("CHECKERS_AI_CHECKPOINT_RELOAD_INTERVAL_SEC", "2.0")
+)
 
 # Load model if checkpoint exists
 MODEL_PATH = "checkpoints/model.pth"
@@ -34,6 +46,69 @@ if os.path.exists(MODEL_PATH):
         print("Using untrained model")
 else:
     print("No checkpoint found. Using untrained model")
+
+
+def _load_checkpoint_into_model(checkpoint_path: str) -> None:
+    """Load checkpoint weights into the global fallback model."""
+    global MODEL_VERSION
+
+    checkpoint = torch.load(checkpoint_path, weights_only=False)
+    model.load_state_dict(checkpoint["model_state_dict"])
+    model.eval()
+    MODEL_VERSION = f"v{checkpoint.get('training_steps', 0)}"
+
+
+def maybe_reload_checkpoint() -> bool:
+    """
+    Reload checkpoint into the fallback model if the file changed.
+
+    Returns:
+        True if a reload happened, False otherwise.
+    """
+    global _checkpoint_last_mtime, _checkpoint_last_check_ts
+
+    # If we have a connected learner (same-process setup), do not reload.
+    if learner is not None:
+        return False
+
+    now = time.time()
+    if (now - _checkpoint_last_check_ts) < _checkpoint_min_check_interval_sec:
+        return False
+    _checkpoint_last_check_ts = now
+
+    if not os.path.exists(MODEL_PATH):
+        return False
+
+    try:
+        mtime = os.path.getmtime(MODEL_PATH)
+    except OSError:
+        return False
+
+    # First run: record mtime and attempt a load (best-effort).
+    if _checkpoint_last_mtime is None:
+        _checkpoint_last_mtime = mtime
+        try:
+            with _checkpoint_lock:
+                _load_checkpoint_into_model(MODEL_PATH)
+            return True
+        except Exception as e:
+            print(f"WARNING: Initial checkpoint load failed: {e}")
+            return False
+
+    if mtime <= _checkpoint_last_mtime:
+        return False
+
+    # File changed: reload under lock.
+    try:
+        with _checkpoint_lock:
+            _load_checkpoint_into_model(MODEL_PATH)
+            _checkpoint_last_mtime = mtime
+        print(f"[HOT-RELOAD] Loaded updated checkpoint: {MODEL_VERSION}")
+        return True
+    except Exception as e:
+        # Keep serving with current model on reload failures.
+        print(f"WARNING: Checkpoint hot-reload failed: {e}")
+        return False
 
 
 def set_learner(learner_instance):
@@ -100,6 +175,10 @@ def infer_move(req):
         # Fallback: return first legal move if encoding fails
         print("Warning: No valid move encodings, using fallback")
         return req.legal_moves[0], MODEL_VERSION
+
+    # If we're running API and worker as separate processes, hot-reload the
+    # checkpoint file so gameplay picks up the newest learned model.
+    maybe_reload_checkpoint()
 
     # Unique indices for masking / scoring.
     legal_move_indices = sorted({idx for _, idx in encoded_moves})

@@ -1,0 +1,7 @@
+# Dependencies for the daily global AI training job (GitHub Actions)
+# Kept separate from the runtime requirements so local/dev installs stay light.
+
+requests
+numpy
+tensorflow-cpu
+tensorflowjs

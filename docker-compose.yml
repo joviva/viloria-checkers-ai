@@ -1,0 +1,31 @@
+services:
+  api:
+    build: .
+    command: uvicorn api.main:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+      - ./checkpoints:/app/checkpoints
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+
+  worker:
+    build: .
+    command: python -m learning.worker
+    depends_on:
+      - api
+    volumes:
+      - ./data:/app/data
+      - ./checkpoints:/app/checkpoints
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+
+  # Optional: auto-update running containers when image tags change.
+  # This is mainly useful for the image-based distribution compose files.
+  watchtower:
+    image: containrrr/watchtower:latest
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: --interval 300 --cleanup --label-enable
+    restart: unless-stopped
