@@ -8564,6 +8564,7 @@ const enhancedAI = {
         }
       }
     }
+    this.normalizeWeights();
   },
 
   /**
@@ -8591,6 +8592,38 @@ const enhancedAI = {
         }
       }
     }
+    this.normalizeWeights();
+  },
+
+  /**
+   * Normalizes weights to prevent runaway inflation values during learning.
+   * Ensures strategic weights never exceed logical material boundaries.
+   */
+  normalizeWeights() {
+    const MATERIAL_VALUE = this.baseWeights.material || 1000000;
+    const KING_VALUE = this.baseWeights.king || 20000000;
+
+    // Cap aggressive/tactical weights at a fraction of a pawn
+    // (A positional bonus shouldn't exceed the value of an actual piece)
+    this.baseWeights.captureBase = Math.min(
+      this.baseWeights.captureBase,
+      MATERIAL_VALUE * 0.5
+    );
+    this.baseWeights.kingActivity = Math.min(
+      this.baseWeights.kingActivity,
+      MATERIAL_VALUE * 0.2
+    );
+
+    // Cap defensive penalties
+    // (Fear of losing a piece shouldn't become infinitely paralyzed)
+    this.baseWeights.selfDanger = Math.min(
+      this.baseWeights.selfDanger,
+      KING_VALUE * 1.5
+    );
+    this.baseWeights.kingEndangerPenalty = Math.min(
+      this.baseWeights.kingEndangerPenalty,
+      KING_VALUE * 5
+    );
   },
 
   /**
@@ -10604,7 +10637,7 @@ async function makeAIMove() {
       if (Date.now() - moveStartTime > EMERGENCY_TIMEOUT) {
         console.warn("AI EMERGENCY TIMEOUT - Picking first available move");
         const allMoves = enhancedAI.getAllMovesForBoard(
-          this.getCurrentBoardState(),
+          enhancedAI.getCurrentBoardState(),
           "black"
         );
         if (allMoves.length > 0) movePiece(allMoves[0]);
@@ -11460,114 +11493,6 @@ async function resetGame() {
 
   initGame();
   showMessage("New game started", "info");
-}
-
-async function showAIStats() {
-  const mem = enhancedAI.memory;
-
-  let apiStats = "";
-  let qualityStats = "";
-
-  // 1. Check for Global AI (TF.js) first
-  if (TFJS_CONFIG.enabled) {
-    const version = window.checkersTfAi?.modelVersion || "Unknown (Latest)";
-    apiStats = `
-        --- 🌐 Global AI (TF.js) ---
-        Status: [ONLINE] Running in Browser
-        Model Version: ${version}
-        Updates: Daily (Auto-fetched from Supabase)
-        Backend: Serverless
-        
-        ✨ Enhanced Features Active:
-        • Quality Filtering (50+ move games)
-        • Priority Sampling (Captures 2-3x)
-        • AI Loss Boosting (1.2x learning)
-    `;
-  }
-  // 2. Fall back to Python Backend
-  else if (API_CONFIG.enabled) {
-    try {
-      const resp = await apiFetch(`/api/stats`).catch(() => null);
-      if (resp && resp.ok) {
-        const data = await resp.json();
-        apiStats = `
-        --- 🧠 Neural Network Stats (Backend) ---
-        Training Status: ${
-          data.learning_active ? "[ACTIVE] Active" : "[PAUSED] Paused"
-        }
-        Total Trajectories: ${data.total_trajectories || 0}
-        Games in Database: ${data.total_games || 0}
-        Learning Iterations: ${data.learning_iterations || 0}
-        Current Loss: ${
-          data.current_loss ? data.current_loss.toFixed(4) : "N/A"
-        }
-        Model Health: ${data.model_healthy ? "[OK] Healthy" : "Issues Detected"}
-        
-        ✨ Enhanced Features Active:
-        • Quality Filtering (50+ move games)
-        • Priority Sampling (Captures 2-3x)
-        • AI Loss Boosting (1.2x learning)
-        `;
-      }
-    } catch (error) {
-      apiStats = `
-        --- Neural Network Stats ---
-        Status: [WARNING] API Not Available
-        `;
-    }
-  } else {
-    apiStats = `
-        --- Neural Network Stats ---
-        Status: [OFFLINE] Heuristic Mode Only
-        Note: Games still collected for when backend starts
-    `;
-  }
-
-  // Calculate defensive performance summary
-  let defenseRating = "N/A";
-  if (defensiveState && defensiveState.currentHealth > 0) {
-    const health = defensiveState.currentHealth;
-    defenseRating =
-      health >= 85
-        ? "💚 Excellent"
-        : health >= 75
-        ? "🟢 Good"
-        : health >= 60
-        ? "🟡 Fair"
-        : "🔴 Struggling";
-  }
-
-  const stats = `
-╔═══════════════════════════════════════════════════╗
-║           🎮 AI PERFORMANCE REPORT 🎮            ║
-╚═══════════════════════════════════════════════════╝
-
-        --- 📊 Session Statistics ---
-        Games Played: ${mem.games}
-        Wins: ${mem.wins} | Losses: ${mem.losses}
-        Win Rate: ${(mem.games > 0 ? (mem.wins / mem.games) * 100 : 0).toFixed(
-          1
-        )}%
-        Defense Rating: ${defenseRating}
-
-        --- 🧠 Local Learning Data ---
-        Known Positions: ${mem.positionDatabase.size}${
-    mem.games === 0 ? " (play games to learn)" : ""
-  }
-        Winning Patterns: ${mem.winningMoveTypes.size}${
-    mem.wins === 0 ? " (win games to learn)" : ""
-  }
-        Losing Patterns: ${mem.losingMoveTypes.size}${
-    mem.losses === 0 ? " (AI learns from losses)" : ""
-  }
-        Experience Level: ${mem.experienceLevel || 0}
-${apiStats}
-
-╔═══════════════════════════════════════════════════╗
-║  💡 Learning System: v2.0 (Quality Filtering)    ║
-╚═══════════════════════════════════════════════════╝
-    `;
-  alert(stats);
 }
 
 // Utility
