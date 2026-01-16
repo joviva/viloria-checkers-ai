@@ -1,4 +1,5 @@
 // Supabase Edge Function: submit-game
+/// <reference path="../deno_shims.d.ts" />
 // Receives a finished game record and inserts it into public.game_logs.
 //
 // Deploy with Supabase CLI.
@@ -7,8 +8,7 @@
 // - Keep RLS enabled on public.game_logs.
 // - This function uses the service role key (server-side) so the client never gets write access.
 
-import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient } from "@supabase/supabase-js";
 
 type SubmitPayload = {
   game_id: string;
@@ -33,7 +33,7 @@ function json(status: number, body: unknown) {
   });
 }
 
-serve(async (req: Request) => {
+Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return json(200, { ok: true });
   if (req.method !== "POST") return json(405, { error: "POST only" });
 
