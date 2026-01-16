@@ -1,0 +1,3 @@
+# markdownlint ignore list
+# Caddyfile is not Markdown; its '#' comments look like Markdown headings.
+Caddyfile

@@ -38,17 +38,18 @@ Important: for the Edge Function, you will store the Service Role Key under the 
 ### 4) Deploy the Edge Function (submit-game)
 
 1. Install Supabase CLI on your computer.
-2. Link the repo to your Supabase project.
-3. Set the Edge Function secret:
+1. Link the repo to your Supabase project.
+1. Set the Edge Function secret:
 
 - `supabase secrets set SERVICE_ROLE_KEY=...`
 
-4. Deploy the function (with JWT verification disabled so a static website can call it):
+1. Deploy the function (with JWT verification disabled so a static website can call it):
 
 - `supabase functions deploy submit-game --no-verify-jwt`
 
-3. After deploy, you’ll get a URL like:
-   - `https://YOURPROJECT.functions.supabase.co/submit-game`
+1. After deploy, you’ll get a URL like:
+
+- `https://YOURPROJECT.functions.supabase.co/submit-game`
 
 ### 5) Add GitHub Secrets
 
