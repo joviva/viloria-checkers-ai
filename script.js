@@ -9548,6 +9548,13 @@ const enhancedAI = {
 
 // Game initialization
 function initGame() {
+  // Hide the title and show the message area prominently
+  const titleEl = document.getElementById("main-title");
+  if (titleEl) titleEl.style.display = "none";
+
+  const msgContainer = document.querySelector(".message-area-container");
+  if (msgContainer) msgContainer.style.display = "flex";
+
   board.innerHTML = "";
   squares.length = 0;
   selectedPiece = null;
@@ -9582,6 +9589,10 @@ function initGame() {
   if (API_CONFIG.enabled) {
     resumeLearning();
   }
+
+  // Show welcome message
+  showMessage("Game Started!", "info");
+  setTimeout(() => showMessage(""), 3000);
 
   // Initialize defense monitoring
   defensiveMetrics = {
@@ -11380,10 +11391,27 @@ function loadPanelStats() {
 
 function showMessage(msg, type = "") {
   const messageArea = document.getElementById("game-message");
-  messageArea.textContent = msg;
-  messageArea.className = "message-area"; // Reset classes
-  if (type) {
-    messageArea.classList.add(`${type}-message`);
+  const msgContainer = document.querySelector(".message-area-container");
+  const titleEl = document.getElementById("main-title");
+
+  if (!msg) {
+    // No message -> Hide message container, Show Title
+    if (msgContainer) msgContainer.style.display = "none";
+    if (titleEl) titleEl.style.display = "block";
+    if (messageArea) messageArea.textContent = "";
+    return;
+  }
+
+  // Has message -> Hide Title, Show message container
+  if (titleEl) titleEl.style.display = "none";
+  if (msgContainer) msgContainer.style.display = "flex";
+
+  if (messageArea) {
+    messageArea.textContent = msg;
+    messageArea.className = "message-area"; // Reset classes
+    if (type) {
+      messageArea.classList.add(`${type}-message`);
+    }
   }
 }
 
@@ -11494,7 +11522,6 @@ async function resetGame() {
   savePanelStats(); // Save the reset values
 
   initGame();
-  showMessage("New game started", "info");
 }
 
 // Utility

@@ -81,8 +81,9 @@ h1 {
 
 .game-layout {
   display: grid;
-  grid-template-columns: 300px 1fr 300px;
-  gap: 30px;
+  grid-template-columns: 300px auto 300px;
+  justify-content: center;
+  gap: 10px;
   align-items: start;
 }
 
@@ -285,7 +286,7 @@ h1 {
 }
 
 #defense-stats {
-  font-family: 'Courier New', monospace;
+  font-family: "Courier New", monospace;
   font-size: 0.7em;
   line-height: 1.3;
   color: #e0e0e0;
@@ -298,23 +299,30 @@ h1 {
   overflow-x: auto;
 }
 
+.message-area-container {
+  min-height: 40px;
+  margin: 0 0 15px 0;
+  display: flex;
+  justify-content: center;
+  width: 100%;
+}
+
 .message-area {
   text-align: center;
-  min-height: 30px;
   font-size: 1.2em;
   font-weight: bold;
+  padding: 8px 20px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.1);
+  color: white;
   min-width: 200px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  white-space: nowrap;
+  display: inline-block;
 }
 
 .win-message {
   color: #ffd700;
   animation: celebration 2s infinite;
 }
-
 
 .suggested-move {
   box-shadow: 0 0 15px 5px rgba(255, 107, 71, 0.8) !important;
@@ -355,6 +363,11 @@ h1 {
 }
 
 @media (max-width: 768px) {
+  .game-container {
+    padding-left: 18px; /* Added 3px extra padding as requested */
+    padding-right: 18px;
+  }
+
   .game-layout {
     grid-template-columns: 1fr;
     gap: 20px;
