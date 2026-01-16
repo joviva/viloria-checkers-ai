@@ -179,6 +179,16 @@ def train_tfjs_policy_model(x: np.ndarray, y: np.ndarray, env: Env):
 
 
 def export_tfjs(model, out_dir: Path) -> None:
+    # tensorflowjs (as of early 2026) still references deprecated NumPy aliases
+    # like `np.object` / `np.bool`, which were removed in NumPy 2.x. Shim them so
+    # export works regardless of the runner's preinstalled NumPy.
+    import numpy as np
+
+    if not hasattr(np, "object"):
+        np.object = np.object_  # type: ignore[attr-defined]
+    if not hasattr(np, "bool"):
+        np.bool = np.bool_  # type: ignore[attr-defined]
+
     import tensorflowjs as tfjs
 
     out_dir.mkdir(parents=True, exist_ok=True)
