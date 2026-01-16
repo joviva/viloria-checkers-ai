@@ -86,10 +86,20 @@ h1 {
 
 .game-layout {
   display: grid;
-  grid-template-columns: 294px auto 294px;
+  grid-template-columns: 300px auto 300px;
   justify-content: center;
   gap: 10px;
   align-items: start;
+}
+
+/* Specific styling for the AI Control panel (Right Panel) */
+.game-layout > .info-panel:last-child {
+  padding: 15px; /* Reduced from 20px */
+}
+
+/* Ensure content inside doesn't overflow */
+.game-layout > .info-panel:last-child * {
+  max-width: 100%;
 }
 
 .info-panel {
