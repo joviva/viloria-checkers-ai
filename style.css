@@ -338,12 +338,14 @@ h1 {
 }
 
 .warning-message {
-  color: #ff6b47;
-  background: rgba(255, 107, 71, 0.1);
-  padding: 8px 15px;
+  color: #fff;
+  background: linear-gradient(135deg, #ff8c00, #ff4500);
+  padding: 8px 20px;
   border-radius: 8px;
-  border: 1px solid rgba(255, 107, 71, 0.3);
-  animation: pulse-warning 2s infinite;
+  border: 1px solid #ffd700;
+  box-shadow: 0 0 20px rgba(255, 140, 0, 0.8), inset 0 0 10px rgba(255, 255, 255, 0.2);
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.5);
+  animation: pulse-warning 1.5s infinite;
 }
 
 @keyframes pulse-warning {
