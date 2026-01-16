@@ -2,6 +2,6 @@
 # Kept separate from the runtime requirements so local/dev installs stay light.
 
 requests
-numpy
+numpy<2
 tensorflow-cpu
 tensorflowjs
