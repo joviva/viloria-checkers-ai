@@ -24,8 +24,8 @@ body {
 h1 {
   text-align: center;
   font-size: 1.3em;
-  margin: 0 0 10px 0;
-  min-height: 38px;
+  min-height: 48px;
+  margin: 0 0 15px 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -34,6 +34,7 @@ h1 {
   background-clip: text;
   -webkit-text-fill-color: transparent;
   text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+  box-sizing: border-box;
 }
 
 #header-container {
@@ -304,11 +305,13 @@ h1 {
 }
 
 .message-area-container {
-  min-height: 40px;
+  height: 48px;
   margin: 0 0 15px 0;
   display: flex;
   justify-content: center;
+  align-items: center;
   width: 100%;
+  box-sizing: border-box;
 }
 
 .message-area {
