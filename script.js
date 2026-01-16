@@ -11375,13 +11375,32 @@ function updateAIStatsDisplay() {
   const checkIntervals = snapshots.length;
   const gameLengthMoves = moveCount;
 
+  // Determine performance rating
+  let performanceRating = "Excellent";
+  let ratingEmoji = "🟢";
+  if (avgHealth < 60) {
+    performanceRating = "Struggling";
+    ratingEmoji = "🔴";
+  } else if (avgHealth < 75) {
+    performanceRating = "Fair";
+    ratingEmoji = "🟡";
+  } else if (avgHealth < 85) {
+    performanceRating = "Good";
+    ratingEmoji = "🟢";
+  } else {
+    performanceRating = "Excellent";
+    ratingEmoji = "💚";
+  }
+
   // Format the display box
   const statsBox = `╔════════════════════════════════════╗
-║  DEFENSIVE PERFORMANCE SUMMARY
+║  DEFENSIVE PERFORMANCE ${ratingEmoji}
 ╠════════════════════════════════════╣
 ║ Average Health:    ${avgHealth.toFixed(1).padStart(5)}/100
 ║ Peak Health:       ${peakHealth.toFixed(0).padStart(5)}/100
 ║ Lowest Health:     ${lowestHealth.toFixed(0).padStart(5)}/100
+║ Rating:            ${performanceRating.padEnd(10)}
+║────────────────────────────────────║
 ║ Check Intervals:   ${checkIntervals.toString().padStart(5)}
 ║ Game Length:       ${gameLengthMoves.toString().padStart(5)} moves
 ╚════════════════════════════════════╝`;
@@ -11447,6 +11466,7 @@ async function showAIStats() {
   const mem = enhancedAI.memory;
 
   let apiStats = "";
+  let qualityStats = "";
 
   // 1. Check for Global AI (TF.js) first
   if (TFJS_CONFIG.enabled) {
@@ -11457,6 +11477,11 @@ async function showAIStats() {
         Model Version: ${version}
         Updates: Daily (Auto-fetched from Supabase)
         Backend: Serverless
+        
+        ✨ Enhanced Features Active:
+        • Quality Filtering (50+ move games)
+        • Priority Sampling (Captures 2-3x)
+        • AI Loss Boosting (1.2x learning)
     `;
   }
   // 2. Fall back to Python Backend
@@ -11477,6 +11502,11 @@ async function showAIStats() {
           data.current_loss ? data.current_loss.toFixed(4) : "N/A"
         }
         Model Health: ${data.model_healthy ? "[OK] Healthy" : "Issues Detected"}
+        
+        ✨ Enhanced Features Active:
+        • Quality Filtering (50+ move games)
+        • Priority Sampling (Captures 2-3x)
+        • AI Loss Boosting (1.2x learning)
         `;
       }
     } catch (error) {
@@ -11489,30 +11519,53 @@ async function showAIStats() {
     apiStats = `
         --- Neural Network Stats ---
         Status: [OFFLINE] Heuristic Mode Only
+        Note: Games still collected for when backend starts
     `;
   }
 
+  // Calculate defensive performance summary
+  let defenseRating = "N/A";
+  if (defensiveState && defensiveState.currentHealth > 0) {
+    const health = defensiveState.currentHealth;
+    defenseRating =
+      health >= 85
+        ? "💚 Excellent"
+        : health >= 75
+        ? "🟢 Good"
+        : health >= 60
+        ? "🟡 Fair"
+        : "🔴 Struggling";
+  }
+
   const stats = `
-        --- AI Performance (Session) ---
+╔═══════════════════════════════════════════════════╗
+║           🎮 AI PERFORMANCE REPORT 🎮            ║
+╚═══════════════════════════════════════════════════╝
+
+        --- 📊 Session Statistics ---
         Games Played: ${mem.games}
-        Wins: ${mem.wins}
-        Losses: ${mem.losses}
+        Wins: ${mem.wins} | Losses: ${mem.losses}
         Win Rate: ${(mem.games > 0 ? (mem.wins / mem.games) * 100 : 0).toFixed(
           1
         )}%
+        Defense Rating: ${defenseRating}
 
-        --- Local Learning Data ---
+        --- 🧠 Local Learning Data ---
         Known Positions: ${mem.positionDatabase.size}${
     mem.games === 0 ? " (play games to learn)" : ""
   }
-        Winning Move Patterns: ${mem.winningMoveTypes.size}${
+        Winning Patterns: ${mem.winningMoveTypes.size}${
     mem.wins === 0 ? " (win games to learn)" : ""
   }
-        Losing Move Patterns: ${mem.losingMoveTypes.size}${
+        Losing Patterns: ${mem.losingMoveTypes.size}${
     mem.losses === 0 ? " (AI learns from losses)" : ""
   }
         Experience Level: ${mem.experienceLevel || 0}
 ${apiStats}
+
+╔═══════════════════════════════════════════════════╗
+║  💡 Learning System: v2.0 (Quality Filtering)    ║
+╚═══════════════════════════════════════════════════╝
     `;
   alert(stats);
 }
