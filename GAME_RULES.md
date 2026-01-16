@@ -293,7 +293,7 @@ Moves are recorded with:
 
 ### Q: Can a King lands between two opponent pieces?
 
-## **A:** yes, a king can land between two opponent pieces, but it can't capture,both in the same turn, he first capture the piece, the turns end, and then he can make the other capture in the opposite direction in the next turn.
+**A:** yes, a king can land between two opponent pieces, but it can't capture,both in the same turn, he first capture the piece, the turns end, and then he can make the other capture in the opposite direction in the next turn.
 
 _Last Updated: December 30, 2025_
 _Version: 1.0 - Based on 10x10 International Checkers_
