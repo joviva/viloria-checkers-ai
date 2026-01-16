@@ -53,7 +53,6 @@ This is a **10x10 International Checkers** (also known as Draughts) implementati
 - Land on the dark square immediately after that piece
 - Remove the captured piece from the board
 - Turn **MAY continue** if further captures are available
-  -the ai can't move a piece if he has a piece to capture
 
 ### Multi-Capture Sequences
 
