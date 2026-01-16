@@ -209,8 +209,9 @@ def main() -> int:
     x, y = build_dataset(logs, env)
     print(f"Training steps: {len(x)}")
     if len(x) == 0:
-        print("No training data found in the last window; exiting without publishing.")
-        return 0
+        print(
+            "No training data found in the last window; publishing a baseline model so the site can load it."
+        )
 
     print("Training model...")
     model = train_tfjs_policy_model(x, y, env)
