@@ -33,7 +33,7 @@ function json(status: number, body: unknown) {
   });
 }
 
-serve(async (req) => {
+serve(async (req: Request) => {
   if (req.method === "OPTIONS") return json(200, { ok: true });
   if (req.method !== "POST") return json(405, { error: "POST only" });
 
