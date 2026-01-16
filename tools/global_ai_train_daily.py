@@ -184,9 +184,10 @@ def export_tfjs(model, out_dir: Path) -> None:
     # export works regardless of the runner's preinstalled NumPy.
     import numpy as np
 
-    if not hasattr(np, "object"):
+    # Use __dict__ checks to avoid NumPy 2.x emitting FutureWarning via __getattr__.
+    if "object" not in np.__dict__:
         np.object = np.object_  # type: ignore[attr-defined]
-    if not hasattr(np, "bool"):
+    if "bool" not in np.__dict__:
         np.bool = np.bool_  # type: ignore[attr-defined]
 
     import tensorflowjs as tfjs
