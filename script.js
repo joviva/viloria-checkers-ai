@@ -11457,17 +11457,17 @@ function updateAIStatsDisplay() {
   }
 
   // Format the display box
-  const statsBox = `╔════════════════════════════════════╗
-║  DEFENSIVE PERFORMANCE ${ratingEmoji}
-╠════════════════════════════════════╣
-║ Average Health:    ${avgHealth.toFixed(1).padStart(5)}/100
-║ Peak Health:       ${peakHealth.toFixed(0).padStart(5)}/100
-║ Lowest Health:     ${lowestHealth.toFixed(0).padStart(5)}/100
-║ Rating:            ${performanceRating.padEnd(10)}
-║────────────────────────────────────║
-║ Check Intervals:   ${checkIntervals.toString().padStart(5)}
-║ Game Length:       ${gameLengthMoves.toString().padStart(5)} moves
-╚════════════════════════════════════╝`;
+  const statsBox = `╔══════════════════════╗
+║ DEFENSE SUMMARY ${ratingEmoji}
+╠══════════════════════╣
+║ Avg Health:  ${avgHealth.toFixed(1).padStart(5)}/100
+║ Peak Health: ${peakHealth.toFixed(0).padStart(5)}/100
+║ Low Health:  ${lowestHealth.toFixed(0).padStart(5)}/100
+║ Rating:      ${performanceRating.padEnd(9)}
+║──────────────────────║
+║ Checks:      ${checkIntervals.toString().padStart(5)}
+║ Moves:       ${gameLengthMoves.toString().padStart(5)}
+╚══════════════════════╝`;
 
   defenseStatsEl.textContent = statsBox;
 }
