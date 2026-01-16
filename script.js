@@ -465,8 +465,8 @@ const enhancedAI = {
   // Base weights that evolve over many games
   baseWeights: {
     // Core values
-    material: 1000000, // ABSOLUTE: Pieces are multi-million point assets
-    king: 20000000, // Kings are priceless (Increased to ensure > promotion rush)
+    material: 1000000, // ABSOLUTE: Base unit (1 Pawn)
+    king: 4000000, // Kings are worth 4 Pawns (Strategic Balance)
 
     // Strategic weights - ABSOLUTE DEFENSE
     position: 10,
@@ -475,22 +475,22 @@ const enhancedAI = {
     center: 5,
     advancement: 5, // Near zero: Only advance in absolute vacuum
     cohesion: 50000, // MASSIVE INCREASE: Groups must stick together like glue
-    selfDanger: 10000000, // TOTAL FORBID: Avoid being captured at all cost (including stalemates)
+    selfDanger: 1500000, // High penalty, but allows calculated risks (1.5 Pawns)
 
     // Tactical weights - DEFENSIVE CAPTURES ONLY
     captureBase: 8000,
     multiCaptureBonus: 2000,
     kingCaptureBonus: 10000,
     safeCaptureBonus: 3000,
-    promotionBonus: 5000000, // Increased: Promotion is now a MASSIVE priority
-    promotionRush: 1500000, // Balanced: High, but less than King value (1.5M * 2.5 = 3.75M max)
+    promotionBonus: 2000000, // Significance incentive (2 Pawns)
+    promotionRush: 500000, // Strong drive to promote
     nearPromotionAdvancement: 3000, // NEW: Reward forward movement when close
     threatCreation: 50, // Purely reactive defense
     defensiveValue: 2000,
     kingProtection: 10000,
     kingExposurePenalty: 50000,
     tacticalThreatBonus: 1,
-    kingEndangerPenalty: 30000000, // EXTREME: Risking a king is worse than losing 30 pawns
+    kingEndangerPenalty: 4500000, // Risking a King is very bad (4.5 Pawns), but not infinite
 
     // Attack mode weights - BLOCKED
     sacrificeThreshold: 10000000, // Effectively infinite
@@ -6643,11 +6643,13 @@ const enhancedAI = {
     const gameStateTag = this.checkGameEndOnBoard(boardArr);
     if (gameStateTag === "black") {
       return activeColor === "black"
-        ? 100000 + depthLimit
-        : -100000 - depthLimit;
+        ? 1000000000 + depthLimit
+        : -1000000000 - depthLimit;
     }
     if (gameStateTag === "red") {
-      return activeColor === "red" ? 100000 + depthLimit : -100000 - depthLimit;
+      return activeColor === "red"
+        ? 1000000000 + depthLimit
+        : -1000000000 - depthLimit;
     }
     if (gameStateTag === "draw") return 0;
 
@@ -6658,7 +6660,7 @@ const enhancedAI = {
 
     // 4. GENERATE AND ORCHESTRATE MOVES
     const availableMoves = this.getAllMovesForBoard(boardArr, activeColor);
-    if (availableMoves.length === 0) return -100000; // No moves = Loss in Draughts
+    if (availableMoves.length === 0) return -1000000000; // No moves = Loss in Draughts
 
     // Forced capture rule: pieces must jump if possible
     const captureMoves = availableMoves.filter((m) => m.isCapture);
