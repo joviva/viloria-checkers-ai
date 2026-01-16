@@ -11314,6 +11314,7 @@ function endGame(winner) {
     enhancedAI.recordGame("draw");
   } else {
     showMessage(`${winner} wins!`, "win");
+    setTimeout(() => showMessage(""), 10000); // Display win message for 10 seconds
     if (winner === "Black") {
       enhancedAI.recordGame(true);
     } else {
