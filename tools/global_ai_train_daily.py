@@ -61,8 +61,16 @@ def fetch_game_logs(env: Env) -> list[dict[str, Any]]:
         "limit": "2000",
     }
 
-    r = requests.get(url, headers=_supabase_headers(env.service_role_key), params=params, timeout=60)
-    r.raise_for_status()
+    r = requests.get(
+        url, headers=_supabase_headers(env.service_role_key), params=params, timeout=60
+    )
+    if not r.ok:
+        raise RuntimeError(
+            "Supabase REST fetch failed:\n"
+            f"  url: {r.url}\n"
+            f"  status: {r.status_code}\n"
+            f"  body: {r.text[:2000]}"
+        )
     data = r.json()
     if not isinstance(data, list):
         return []
@@ -178,7 +186,15 @@ def upload_storage_file(env: Env, local_path: Path, storage_path: str, content_t
     headers["x-upsert"] = "true"
     with local_path.open("rb") as f:
         r = requests.post(url, headers=headers, data=f, timeout=120)
-        r.raise_for_status()
+        if not r.ok:
+            raise RuntimeError(
+                "Supabase Storage upload failed:\n"
+                f"  url: {url}\n"
+                f"  bucket: {env.bucket}\n"
+                f"  object: {storage_path}\n"
+                f"  status: {r.status_code}\n"
+                f"  body: {r.text[:2000]}"
+            )
 
 
 def public_object_url(env: Env, storage_path: str) -> str:
