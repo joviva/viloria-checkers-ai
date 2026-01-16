@@ -9,3 +9,7 @@ tests
 README.md
 *.bat
 *.sh
+api/
+requirements.txt
+tools/
+
