@@ -1,0 +1,8 @@
+{
+  // Supabase Edge Functions run on Deno.
+  // These settings make VS Code understand Deno URL imports and the global `Deno` object.
+  "deno.enable": true,
+  "deno.enablePaths": ["supabase/functions"],
+  "deno.lint": true,
+  "deno.unstable": false
+}
