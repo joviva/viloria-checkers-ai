@@ -2,6 +2,7 @@ import json
 import os
 import sys
 import tempfile
+import importlib.util
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -79,10 +80,15 @@ def fetch_game_logs(env: Env) -> list[dict[str, Any]]:
 
 def build_dataset(game_logs: list[dict[str, Any]], env: Env) -> tuple[np.ndarray, np.ndarray]:
     repo_root = Path(__file__).resolve().parents[1]
-    docs_dir = repo_root / "docs"
-    sys.path.insert(0, str(docs_dir))
+    encoder_path = repo_root / "docs" / "model" / "encoder.py"
+    spec = importlib.util.spec_from_file_location("checkers_encoder", encoder_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"Failed to load encoder module from: {encoder_path}")
+    encoder_mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(encoder_mod)  # type: ignore[union-attr]
 
-    from model.encoder import encode_state, encode_move  # type: ignore
+    encode_state = getattr(encoder_mod, "encode_state")
+    encode_move = getattr(encoder_mod, "encode_move")
 
     x_list: list[np.ndarray] = []
     y_list: list[int] = []
