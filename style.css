@@ -86,7 +86,7 @@ h1 {
 
 .game-layout {
   display: grid;
-  grid-template-columns: 297px auto 297px;
+  grid-template-columns: 294px auto 294px;
   justify-content: center;
   gap: 10px;
   align-items: start;
