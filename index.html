@@ -77,6 +77,15 @@ Moves:        0
     </div>
 
     <!-- Optional: Browser AI (TF.js). Enable by setting window.CHECKERS_AI_TFJS_MANIFEST_URL or window.CHECKERS_AI_TFJS_MODEL_URL. -->
+    <script>
+      // Where the browser reads the latest model info (cache-busted daily)
+      window.CHECKERS_AI_TFJS_MANIFEST_URL =
+        "https://rkztzogevbzsyzpbrqni.supabase.co/storage/v1/object/public/models/tfjs/latest.json";
+
+      // Where the browser submits finished games for daily training
+      window.CHECKERS_AI_SUBMIT_GAME_URL =
+        "https://rkztzogevbzsyzpbrqni.functions.supabase.co/submit-game";
+    </script>
     <script
       src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"
       defer
