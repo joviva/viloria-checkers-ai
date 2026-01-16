@@ -8,7 +8,7 @@
 // - Keep RLS enabled on public.game_logs.
 // - This function uses the service role key (server-side) so the client never gets write access.
 
-import { createClient } from "@supabase/supabase-js";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 type SubmitPayload = {
   game_id: string;

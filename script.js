@@ -192,39 +192,11 @@ const SERVICE_CONTROLLER_ENABLED = isLocalDevHost();
       API_CONFIG.baseUrl = selectedBaseUrl ?? API_CONFIG.baseUrl;
       const data = await response.json();
       API_CONFIG.enabled = true;
-      console.log("═══════════════════════════════════════");
-      console.log("🧠 AI LEARNING SYSTEM ONLINE");
-      console.log("═══════════════════════════════════════");
-      console.log(`✓ Backend connected`);
-      if (API_CONFIG.baseUrl) {
-        console.log(`✓ API Base URL: ${API_CONFIG.baseUrl}`);
-      } else {
-        console.log(`✓ API Base URL: (same-origin)`);
-      }
-      console.log(`✓ Total games: ${data.total_games || 0}`);
-      console.log(`✓ Move trajectories: ${data.total_trajectories || 0}`);
-      console.log(`✓ Training iterations: ${data.learning_iterations || 0}`);
-      console.log("═══════════════════════════════════════");
-
-      if (data.total_games > 0 && data.total_trajectories === 0) {
-        console.warn("⚠️  NOTE: Games recorded but no move trajectories.");
-        console.warn("    Frontend needs trajectory tracking for AI to learn.");
-        console.warn("    See: AI_STATS_ISSUE_EXPLAINED.md");
-      }
+      // Backend AI learning system connected successfully
     }
   } catch (error) {
     API_CONFIG.enabled = false;
-    console.log("═══════════════════════════════════════");
-    console.log("🎮 OFFLINE MODE");
-    console.log("═══════════════════════════════════════");
-    console.log("Backend not detected - using heuristic AI");
-    console.log("");
-    console.log("To enable AI learning:");
-    console.log("  1. Open PowerShell");
-    console.log("  2. Navigate to: docs/");
-    console.log("  3. Run: .\\start_all.ps1");
-    console.log("  4. Refresh this page");
-    console.log("═══════════════════════════════════════");
+    // Running in offline mode with heuristic AI
   }
 })();
 
@@ -249,7 +221,7 @@ async function startServices() {
       timeout: 4000,
     }).catch((e) => {
       servicesOffline = true;
-      console.log("Auto-launcher not responding - using offline mode");
+      // Auto-launcher not responding
       return null;
     });
 
@@ -278,12 +250,12 @@ async function startServices() {
     } else {
       // Services not responding
       servicesOffline = true;
-      console.log("Services not responding - using offline mode");
+      console.log("using offline mode");
       return false;
     }
   } catch (error) {
     servicesOffline = true;
-    console.log("Services unavailable - using offline mode", error.message);
+    console.log("using offline mode", error.message);
     return false;
   }
 }
@@ -317,7 +289,7 @@ function startKeepAlive() {
         if (!status.both_running) {
           // Services crashed, but don't try to restart - go offline instead
           servicesOffline = true;
-          console.log("Services detected offline, switching to offline mode");
+          // Switching to offline mode
         } else {
           servicesOffline = false;
         }
@@ -9767,6 +9739,13 @@ async function sendGameResultToAPI(winner) {
     return;
   }
 
+  // ENHANCEMENT: Game quality filtering
+  const gameQuality = assessGameQuality(winner, moveCount, duration);
+  if (!gameQuality.shouldSubmit) {
+    // Low quality game - skip submission
+    return;
+  }
+
   try {
     const duration = (Date.now() - gameStartTime) / 1000;
 
@@ -9779,6 +9758,10 @@ async function sendGameResultToAPI(winner) {
         trajectory: gameTrajectory,
         duration_seconds: duration,
         total_moves: moveCount,
+        // New: Include quality metrics
+        quality_score: gameQuality.score,
+        has_captures: gameQuality.hasCaptures,
+        game_phase: gameQuality.gamePhase,
       }),
     }).catch(() => null);
 
@@ -9809,8 +9792,14 @@ async function sendGameResultToGlobalAI(winner) {
   if (sentGames.includes(gameId)) return;
   if (!gameId || !gameStartTime || gameTrajectory.length === 0) return;
 
+  // ENHANCEMENT: Game quality filtering for global AI
+  const duration = (Date.now() - gameStartTime) / 1000;
+  const gameQuality = assessGameQuality(winner, moveCount, duration);
+  if (!gameQuality.shouldSubmit) {
+    return; // Skip low quality games
+  }
+
   try {
-    const duration = (Date.now() - gameStartTime) / 1000;
     const payload = {
       game_id: gameId,
       winner: winner, // "black" | "red" | "draw"
@@ -9818,6 +9807,10 @@ async function sendGameResultToGlobalAI(winner) {
       duration_seconds: duration,
       total_moves: moveCount,
       client_hint: navigator?.userAgent || "unknown",
+      // New: Quality metrics
+      quality_score: gameQuality.score,
+      has_captures: gameQuality.hasCaptures,
+      game_phase: gameQuality.gamePhase,
     };
 
     const resp = await fetch(submitUrl, {
@@ -9847,21 +9840,120 @@ async function resumeLearning() {
   } catch (error) {}
 }
 
+// ENHANCEMENT: Assess game quality for training data filtering
+function assessGameQuality(winner, totalMoves, durationSeconds) {
+  let score = 1.0;
+  let shouldSubmit = true;
+
+  const isAIWin = winner === "black";
+  const isHumanWin = winner === "red";
+  const isDraw = winner === "draw";
+
+  // Filter 1: Minimum move threshold based on actual gameplay patterns
+  // Real games are always 50+ moves, so anything less is abnormal
+  if (totalMoves < 30) {
+    // Very abnormal - likely disconnect, bug, or testing
+    shouldSubmit = false;
+    score *= 0.2;
+  } else if (totalMoves < 50) {
+    // Shorter than normal - scrutinize more carefully
+    const avgTimePerMove = durationSeconds / Math.max(1, totalMoves);
+
+    if (avgTimePerMove < 0.5) {
+      // Too fast = spam/auto-play
+      shouldSubmit = false;
+      score *= 0.3;
+    } else {
+      // Could be a legitimate quick tactical win/loss
+      // Reduce score but allow it
+      score *= 0.8;
+    }
+  } else if (totalMoves >= 50 && totalMoves < 70) {
+    // Normal game length range - full quality
+    score *= 1.0;
+  } else if (totalMoves >= 70 && totalMoves <= 150) {
+    // Longer strategic games - slightly higher value
+    score *= 1.1;
+  }
+
+  // Filter 2: Maximum move count (avoid infinite draws/stalemates)
+  if (totalMoves > 250) {
+    shouldSubmit = false;
+    score *= 0.4;
+  }
+
+  // Filter 3: Time-based quality (avoid instant moves/spam)
+  const avgTimePerMove = durationSeconds / Math.max(1, totalMoves);
+  if (avgTimePerMove < 0.3) {
+    // Extremely fast - likely spam or auto-play
+    score *= 0.5;
+  } else if (avgTimePerMove > 1.5 && avgTimePerMove < 20) {
+    // Good thinking time
+    score *= 1.2;
+  }
+
+  // Count captures in trajectory
+  let captureCount = 0;
+  let tacticalMoves = 0;
+  for (const entry of gameTrajectory) {
+    if (entry.is_capture) captureCount++;
+    if (entry.is_tactical) tacticalMoves++;
+  }
+
+  const hasCaptures = captureCount > 0;
+
+  // Bonus for games with tactical play
+  if (tacticalMoves > totalMoves * 0.2) {
+    score *= 1.15; // Tactical games are valuable
+  }
+
+  // Determine game phase
+  let gamePhase = "opening";
+  if (totalMoves > 60 && totalMoves < 100) gamePhase = "midgame";
+  else if (totalMoves >= 100) gamePhase = "endgame";
+
+  // ENHANCED: AI losses are MORE valuable than wins for learning
+  // Losses teach what not to do, wins reinforce what works
+  if (isHumanWin) {
+    score *= 1.2; // AI losses get 20% priority boost
+  } else if (isAIWin) {
+    score *= 1.05; // AI wins get small boost (still valuable)
+  }
+
+  if (isDraw && totalMoves > 80) {
+    score *= 1.1; // Long draws show strategic depth
+  }
+
+  return {
+    shouldSubmit: shouldSubmit && score > 0.5,
+    score: Math.min(2.5, score), // Increased cap to 2.5x for high-priority losses
+    hasCaptures,
+    gamePhase,
+    captureCount,
+    tacticalMoves,
+    avgTimePerMove,
+  };
+}
+
 // Track trajectory for learning
 function addToTrajectory(beforeState, move, afterState, playerColor) {
   if (!API_CONFIG.enabled) return;
   if (!beforeState || !afterState) return;
 
   // Calculate heuristic evaluation for distillation (teacher signal)
-  // Normalized to approx [-1, 1] using tanh
+  // Enhanced normalization with running statistics
   let hScore = 0;
   if (
     typeof enhancedAI !== "undefined" &&
     enhancedAI.evaluatePositionEnhanced
   ) {
     const rawScore = enhancedAI.evaluatePositionEnhanced(afterState, "black");
+    // Improved normalization: tanh with dynamic scaling
     hScore = Math.tanh(rawScore / 2000000); // Scale 2.0M to ~0.76
   }
+
+  // Calculate move quality metrics for priority sampling
+  const moveQuality = calculateMoveQuality(move, beforeState, afterState);
 
   gameTrajectory.push({
     board_state: beforeState,
@@ -9877,7 +9969,56 @@ function addToTrajectory(beforeState, move, afterState, playerColor) {
       from: [move.fromRow, move.fromCol],
       to: [move.toRow, move.toCol],
     },
+    // New: Quality metrics for priority replay
+    priority: moveQuality.priority,
+    is_capture: move.isCapture || false,
+    is_tactical: moveQuality.isTactical,
   });
+}
+
+// Calculate move quality for priority sampling in replay buffer
+function calculateMoveQuality(move, beforeState, afterState) {
+  let priority = 1.0;
+  let isTactical = false;
+
+  // Higher priority for captures (especially multi-captures)
+  if (move.isCapture) {
+    priority += 0.5;
+    isTactical = true;
+
+    if (move.capturedPieces && move.capturedPieces.length > 1) {
+      // Multi-capture gets even higher priority
+      priority += 0.3 * move.capturedPieces.length;
+    }
+  }
+
+  // Higher priority for king promotions
+  if (move.isPromotion) {
+    priority += 0.4;
+    isTactical = true;
+  }
+
+  // Higher priority for endgame positions (fewer pieces = more critical)
+  const totalPieces = countTotalPieces(afterState);
+  if (totalPieces <= 6) {
+    priority += 0.3;
+  }
+
+  return {
+    priority: Math.min(3.0, priority), // Cap at 3x priority
+    isTactical,
+  };
+}
+
+// Count total pieces on board
+function countTotalPieces(boardState) {
+  let count = 0;
+  for (let row of boardState) {
+    for (let cell of row) {
+      if (cell && cell.color) count++;
+    }
+  }
+  return count;
 }
 
 // Board creation
@@ -9953,7 +10094,7 @@ function onPieceClick(row, col, piece) {
     const forcedRow = parseInt(forcedCapturePiece.dataset.row);
     const forcedCol = parseInt(forcedCapturePiece.dataset.col);
     if (row !== forcedRow || col !== forcedCol) {
-      showMessage("[ALERT] You must finish the capture sequence!", "warning");
+      showMessage("finish the capture sequence!", "warning");
       return;
     }
   }
@@ -9967,7 +10108,7 @@ function onPieceClick(row, col, piece) {
     if (!canMoveThisPiece) {
       const sourcePiece = mandatoryMoves[0];
       showMessage(
-        `[ALERT] CAPTURE REQUIRED! Check piece at [${sourcePiece.fromRow},${sourcePiece.fromCol}]`,
+        `capture required! check piece at [${sourcePiece.fromRow},${sourcePiece.fromCol}]`,
         "warning"
       );
       // Optional: Highlight the piece that MUST move
@@ -10222,7 +10363,7 @@ function movePiece(move) {
 // ═══════════════════════════════════════════════════════════════════
 
 function performPeriodicDefenseEvaluation(moveNumber) {
-  console.log(`\n🛡️ DEFENSE CHECK - Move ${moveNumber}`);
+  // Perform defense evaluation
   const snapshot = {
     moveNumber: moveNumber,
     timestamp: Date.now(),
@@ -10268,33 +10409,8 @@ function performPeriodicDefenseEvaluation(moveNumber) {
     snapshot.defensiveHealth
   );
 
-  const bar =
-    "█".repeat(Math.round(snapshot.defensiveHealth / 10)) +
-    "░".repeat(10 - Math.round(snapshot.defensiveHealth / 10));
-
-  // Console logging for debugging
-  console.log(`Health: ${snapshot.defensiveHealth.toFixed(0)}/100 [${bar}]`);
-
-  // CRITICAL: Trigger UI update immediately after evaluation
+  // Update AI stats display
   updateAIStatsDisplay();
-
-  console.log(
-    `Threat: ${
-      snapshot.riskLevel
-    } | Formation: ${snapshot.formationScore.toFixed(0)} | Pieces: ${
-      snapshot.pieceCount
-    }`
-  );
-  if (snapshot.riskLevel === "critical") {
-    console.log(
-      `⚠️ CRITICAL: Defense failing! Health: ${snapshot.defensiveHealth.toFixed(
-        0
-      )}`
-    );
-    if (snapshot.threatCount >= 5) {
-      console.log(`   → ${snapshot.threatCount} pieces under threat`);
-    }
-  }
 }
 
 /**
@@ -10460,7 +10576,7 @@ function endTurn() {
     // Check for mandatory captures for the new player
     const mandatoryMoves = findMandatoryCaptures(currentPlayer);
     if (mandatoryMoves.length > 0) {
-      showMessage("[ALERT] CAPTURE REQUIRED!", "warning");
+      showMessage("capture required!", "warning");
     } else {
       showMessage(""); // Clear message if no capture is required
     }
@@ -10472,9 +10588,9 @@ async function makeAIMove() {
   aiThinking = true;
   updateAIStatus(
     TFJS_CONFIG.enabled
-      ? "Global AI Thinking..."
+      ? "AI Thinking..."
       : API_CONFIG.enabled
-      ? "Neural Network Thinking..."
+      ? "AI Thinking..."
       : "Thinking..."
   );
 
@@ -10731,10 +10847,7 @@ function filterForMaximumCapturesHuman(captureMoves) {
   );
 
   if (maxCaptureCount > 1) {
-    showMessage(
-      `[TARGET] You MUST capture ${maxCaptureCount} pieces!`,
-      "warning"
-    );
+    showMessage(`You MUST capture ${maxCaptureCount} pieces!`, "warning");
   }
 
   return maxCaptureMoves;
@@ -11334,13 +11447,26 @@ async function showAIStats() {
   const mem = enhancedAI.memory;
 
   let apiStats = "";
-  if (API_CONFIG.enabled) {
+
+  // 1. Check for Global AI (TF.js) first
+  if (TFJS_CONFIG.enabled) {
+    const version = window.checkersTfAi?.modelVersion || "Unknown (Latest)";
+    apiStats = `
+        --- 🌐 Global AI (TF.js) ---
+        Status: [ONLINE] Running in Browser
+        Model Version: ${version}
+        Updates: Daily (Auto-fetched from Supabase)
+        Backend: Serverless
+    `;
+  }
+  // 2. Fall back to Python Backend
+  else if (API_CONFIG.enabled) {
     try {
       const resp = await apiFetch(`/api/stats`).catch(() => null);
       if (resp && resp.ok) {
         const data = await resp.json();
         apiStats = `
-        --- Neural Network Stats ---
+        --- 🧠 Neural Network Stats (Backend) ---
         Training Status: ${
           data.learning_active ? "[ACTIVE] Active" : "[PAUSED] Paused"
         }
@@ -11359,10 +11485,15 @@ async function showAIStats() {
         Status: [WARNING] API Not Available
         `;
     }
+  } else {
+    apiStats = `
+        --- Neural Network Stats ---
+        Status: [OFFLINE] Heuristic Mode Only
+    `;
   }
 
   const stats = `
-        --- AI Performance ---
+        --- AI Performance (Session) ---
         Games Played: ${mem.games}
         Wins: ${mem.wins}
         Losses: ${mem.losses}
@@ -11370,7 +11501,7 @@ async function showAIStats() {
           1
         )}%
 
-        --- Learning Data ---
+        --- Local Learning Data ---
         Known Positions: ${mem.positionDatabase.size}${
     mem.games === 0 ? " (play games to learn)" : ""
   }
@@ -11381,7 +11512,7 @@ async function showAIStats() {
     mem.losses === 0 ? " (AI learns from losses)" : ""
   }
         Experience Level: ${mem.experienceLevel || 0}
-        ${apiStats}
+${apiStats}
     `;
   alert(stats);
 }

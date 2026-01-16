@@ -7,7 +7,7 @@ WORKDIR /usr/share/nginx/html
 COPY index.html ./
 COPY script.js ./
 COPY style.css ./
-COPY periodic_defense_functions.js ./
+COPY tf_ai.js ./
 COPY GAME_RULES.md ./
 COPY README.md ./
 
