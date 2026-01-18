@@ -2021,10 +2021,10 @@ const enhancedAI = {
       // Destination is dangerous
       if (move.isCapture) {
         // If it's a capture, we might accept some risk, but still penalize
-        safetyScore -= 150;
+        safetyScore -= this.weights.selfDanger * 0.5;
       } else {
         // For non-captures, heavily penalize moving into danger
-        safetyScore -= 500;
+        safetyScore -= this.weights.selfDanger;
       }
     }
 
@@ -2032,12 +2032,12 @@ const enhancedAI = {
     const hasSafeAlternative = this.hasSafeAlternativeMove(move);
     if (!destinationSafe && hasSafeAlternative) {
       // Extra penalty if we have safe options but choosing dangerous one
-      safetyScore -= 300;
+      safetyScore -= this.weights.selfDanger * 0.3;
     }
 
     // 3. Bonus for maintaining protected positions
     if (destinationSafe && this.hasAdjacentAllies(move.toRow, move.toCol)) {
-      safetyScore += 100;
+      safetyScore += this.weights.supportBonus || 10000;
     }
 
     return safetyScore;
@@ -2058,11 +2058,12 @@ const enhancedAI = {
 
     if (opponentThreats.canCapturePiece) {
       // Opponent can capture our piece after this move
-      consequenceScore -= 400;
+      // STRICT PUNISHMENT: Use material weight + penalty
+      consequenceScore -= (this.weights.material || 1000000); 
 
       if (opponentThreats.captureIsUnavoidable) {
         // If we're sacrificing the piece with no gain
-        consequenceScore -= 200;
+        consequenceScore -= this.weights.selfDanger;
       }
     }
 
@@ -2091,7 +2092,7 @@ const enhancedAI = {
 
     // EMERGENCY CHECK: Is this a completely pointless sacrifice?
     if (this.willBeUnderThreat(toRow, toCol, move.piece) && !move.isCapture) {
-      antiSacrificeScore -= 10000; // MASSIVE penalty to block this move
+      antiSacrificeScore -= (this.weights.sacrificeThreshold || 10000000); // MASSIVE penalty to block this move
       return antiSacrificeScore;
     }
 
