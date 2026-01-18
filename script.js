@@ -48,6 +48,7 @@ const TFJS_CONFIG = {
   modelReady: false,
   manifestUrl: null,
   modelUrl: null,
+  loadError: null,
 };
 
 // Optional: allow deployments to inject a backend URL without editing this file.
@@ -129,6 +130,10 @@ const SERVICE_CONTROLLER_ENABLED = isLocalDevHost();
         TFJS_CONFIG.modelReady = true;
         API_CONFIG.enabled = false;
 
+        const v = window.checkersTfAi?.modelVersion;
+        const statusLabel = v ? `Global AI (${v})` : "Global Neural Net";
+        updateAIStatus(statusLabel);
+
         console.log("═══════════════════════════════════════");
         console.log("🌐 GLOBAL AI ONLINE (TF.js)");
         console.log("═══════════════════════════════════════");
@@ -144,10 +149,12 @@ const SERVICE_CONTROLLER_ENABLED = isLocalDevHost();
       } catch (e) {
         TFJS_CONFIG.enabled = false;
         TFJS_CONFIG.modelReady = false;
+        TFJS_CONFIG.loadError = e.message;
         console.warn(
           "TF.js model load failed; falling back to backend/offline.",
           e
         );
+        updateAIStatus("AI Error (See Console)");
       }
     }
 
@@ -455,6 +462,14 @@ let cachedFormationState = null;
 
 const PERIODIC_EVAL_INTERVAL = 1; // Every 1 move (Continuous monitoring)
 const HEALTH_WARNING_THRESHOLD = 60;
+
+// Centralized Piece Values for Dynamic Adjustment
+const PIECE_VALUES = {
+  opening: { pawn: 100, king: 300 },
+  endgame: { pawn: 150, king: 500 } // Higher value enforces "Anti-Sacrifice" in endgame
+};
+
+let currentPhase = "opening"; // "opening" or "endgame"
 const HEALTH_CRITICAL_THRESHOLD = 40;
 
 // Enhanced AI system
@@ -714,6 +729,48 @@ const enhancedAI = {
   // Advanced position evaluation
   evaluatePosition(color) {
     return this.evaluatePositionEnhanced(this.getCurrentBoardState(), color);
+  },
+
+  // NEW: Check for endgame status (<= 8 pieces)
+  checkEndgameStatus() {
+    let blackPieces = 0;
+    for (let r = 0; r < BOARD_SIZE; r++) {
+      for (let c = 0; c < BOARD_SIZE; c++) {
+        const piece = this.getPieceAt(r, c);
+        if (piece && piece.dataset.color === "black") {
+          blackPieces++;
+        }
+      }
+    }
+
+    if (blackPieces <= 8) {
+      if (currentPhase !== "endgame") {
+        console.log("⚠️ ENDGAME DETECTED: Switching to Absolute Defense Mode (Pieces <= 8)");
+        currentPhase = "endgame";
+        // Force update of weights immediately when phase changes
+        this.updateEndgameWeights();
+      }
+    } else {
+      currentPhase = "opening";
+    }
+    return currentPhase;
+  },
+
+  // NEW: Dynamically adjust weights for endgame
+  updateEndgameWeights() {
+    if (currentPhase === "endgame") {
+      // Significantly boost defensive weights
+      this.weights.kingEndangerPenalty = 9000000; // Almost double the penalty
+      this.weights.sacrificeThreshold = 20000000; // Impossible to jump over
+      this.weights.isolationPenalty = 150000;
+      this.weights.formationIntegrity = 100000; // New weight priority
+      this.weights.avoidCapture = 10000; // Must not lose pieces
+      
+      console.log("🛡️ DEFENSE PROTOCOL ACTIVE: Weights adjusted for maximum survival.");
+    } else {
+       // Reset to base weights (implicit, as this.weights is usually a copy of baseWeights)
+       // But to be safe, we can re-assign base values if needed, or rely on the copy mechanism at start of move
+    }
   },
 
   evaluateTacticalThreats(color) {
@@ -2027,7 +2084,10 @@ const enhancedAI = {
     let antiSacrificeScore = 0;
     const toRow = move.toRow;
     const toCol = move.toCol;
-    const pieceValue = move.piece.dataset.king === "true" ? 300 : 100;
+    
+    // Dynamic piece value based on phase
+    const values = PIECE_VALUES[currentPhase] || PIECE_VALUES.opening;
+    const pieceValue = move.piece.dataset.king === "true" ? values.king : values.pawn;
 
     // EMERGENCY CHECK: Is this a completely pointless sacrifice?
     if (this.willBeUnderThreat(toRow, toCol, move.piece) && !move.isCapture) {
@@ -2160,7 +2220,8 @@ const enhancedAI = {
       for (let col = 0; col < BOARD_SIZE; col++) {
         const piece = this.getPieceAt(row, col);
         if (piece) {
-          const value = piece.dataset.king === "true" ? 3 : 1;
+          const values = PIECE_VALUES[currentPhase] || PIECE_VALUES.opening;
+          const value = piece.dataset.king === "true" ? values.king : values.pawn;
           if (piece.dataset.color === "black") blackPieces += value;
           else redPieces += value;
         }
@@ -5476,6 +5537,23 @@ const enhancedAI = {
       this.weights.cohesion *= 2.0;
       this.weights.isolationPenalty *= 3.0;
     }
+
+    // --- ABSOLUTE DEFENSE OVERRIDE (User Request: <= 8 black pieces) ---
+    if (blackPieceCount <= 8) {
+      if (currentPhase !== "endgame") {
+          currentPhase = "endgame";
+          console.log("⚠️ ENDGAME DETECTED (<=8 pieces): Switching to Absolute Defense Mode");
+      }
+      // Apply maximum defensive overrides
+      this.weights.kingEndangerPenalty = 9000000;
+      this.weights.sacrificeThreshold = 20000000;
+      this.weights.isolationPenalty = 150000;
+      this.weights.formationIntegrity = 100000; 
+      this.weights.avoidCapture = 10000;
+      this.weights.selfDanger = 10000000; 
+    } else {
+        if (currentPhase === "endgame") currentPhase = "opening";
+    }
   },
 
   /**
@@ -8042,7 +8120,7 @@ const enhancedAI = {
       gameLength: this.memory.lastGameMoves.length,
       timestamp: Date.now(),
       finalEvaluation: this.evaluatePositionEnhanced(
-        squaresToBoard(squares),
+        this.getCurrentBoardState(),
         "black"
       ),
       strategyUsed: this.getCurrentStrategy(),
@@ -9580,10 +9658,18 @@ function initGame() {
   updateMoveCount();
   enhancedAI.loadMemory();
   enhancedAI.weights = { ...enhancedAI.baseWeights }; // Initialize weights
-  updateAIStatus(
-    API_CONFIG.enabled ? "Neural Network AI" : "Grandmaster Level"
-  );
-  updateAIStatsDisplay();
+
+  let label = "Grandmaster Level";
+  if (typeof TFJS_CONFIG !== "undefined" && TFJS_CONFIG.enabled) {
+    const v = window.checkersTfAi?.modelVersion;
+    label = v ? `Global AI (${v})` : "Global Neural Net";
+  } else if (TFJS_CONFIG.loadError) {
+    label = "Local AI (Offline)";
+    console.log("AI Load Error:", TFJS_CONFIG.loadError);
+  } else if (API_CONFIG.enabled) {
+    label = "Neural Network AI";
+  }
+  updateAIStatus(label);
 
   // Auto-resume learning when game starts (if API is enabled)
   if (API_CONFIG.enabled) {
@@ -9610,6 +9696,7 @@ function initGame() {
     decisions: [],
     alerts: [],
   };
+  updateAIStatsDisplay();
 
   defensiveState = {
     currentHealth: 100,
@@ -11458,15 +11545,15 @@ function updateAIStatsDisplay() {
 
   // Format the display box
   const statsBox = `╔══════════════════════╗
-║ DEFENSE SUMMARY ${ratingEmoji}
+   DEFENSE SUMMARY ${ratingEmoji}
 ╠══════════════════════╣
-║ Avg Health:  ${avgHealth.toFixed(1).padStart(5)}/100
-║ Peak Health: ${peakHealth.toFixed(0).padStart(5)}/100
-║ Low Health:  ${lowestHealth.toFixed(0).padStart(5)}/100
-║ Rating:      ${performanceRating.padEnd(9)}
-║──────────────────────║
-║ Checks:      ${checkIntervals.toString().padStart(5)}
-║ Moves:       ${gameLengthMoves.toString().padStart(5)}
+Avg Health:  ${avgHealth.toFixed(1).padStart(5)}/100
+Peak Health: ${peakHealth.toFixed(0).padStart(5)}/100
+Low Health:  ${lowestHealth.toFixed(0).padStart(5)}/100
+Rating:      ${performanceRating.padEnd(9)}
+──────────────────────
+Checks:      ${checkIntervals.toString().padStart(5)}
+Moves:       ${gameLengthMoves.toString().padStart(5)}
 ╚══════════════════════╝`;
 
   defenseStatsEl.textContent = statsBox;
